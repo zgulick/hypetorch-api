@@ -4,61 +4,77 @@ import os
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 
+# Initialize FastAPI app
 app = FastAPI()
 
-# Enable CORS for Netlify/Bolt.new frontend
+# Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this to match your front-end URL for better security
+    allow_origins=["*"],  # Adjust for security
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Define the path where the JSON file is stored
-DATA_FOLDER = Path("~/Downloads").expanduser()
-DATA_FILE = DATA_FOLDER / "hypetorch_latest_output.json"
+# Define JSON data file path
+DATA_FILE = Path("~/Downloads/hypetorch-scripts/hypetorch_latest_output.json").expanduser()
 
-# Ensure data folder exists
-DATA_FOLDER.mkdir(parents=True, exist_ok=True)
+# Ensure the data folder exists
+DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-# Load JSON data
-
+# ✅ Function to load JSON data safely
 def load_data():
+    """Loads the JSON file if it exists, otherwise returns an empty dictionary."""
     if not DATA_FILE.exists():
-        return {"message": "No data available. Upload a file first."}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
+        print(f"❌ ERROR: {DATA_FILE} not found!")
+        return {}
+    try:
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
+        print("✅ JSON Data Loaded Successfully")
+        return data
+    except json.JSONDecodeError as e:
+        print(f"❌ ERROR: JSON file is corrupted: {e}")
+        return {}
 
-# API Routes
+# ✅ API Endpoints
 
 @app.get("/api/entities")
 def get_entities():
-    """Return a list of all tracked entities (players, teams, brands, etc.)."""
+    """Returns a list of all tracked entities (players, teams, brands, etc.)."""
     data = load_data()
     return list(data.get("hype_scores", {}).keys())
 
 @app.get("/api/entities/{entity_id}")
 def get_entity_details(entity_id: str):
-    """Fix underscore issue by replacing `_` with spaces before looking up entity."""
+    """Returns detailed hype data for a specific entity."""
     data = load_data()
-    
-    entity_name = entity_id.replace("_", " ")  # Convert URL-friendly names back to original
+    entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+
+    if entity_name not in data.get("hype_scores", {}):
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
 
     return {
-        "name": entity_id,
+        "name": entity_name,
         "hype_score": data.get("hype_scores", {}).get(entity_name, "N/A"),
         "mentions": data.get("mention_counts", {}).get(entity_name, 0),
         "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
         "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
     }
 
+@app.get("/api/hype_scores")
+def get_hype_scores():
+    """Returns all hype scores from the JSON file."""
+    data = load_data()
+    if "hype_scores" not in data:
+        raise HTTPException(status_code=500, detail="❌ ERROR: 'hype_scores' field missing in JSON file.")
+    return data["hype_scores"]
+
 @app.get("/api/entities/{entity_id}/metrics")
 def get_entity_metrics(entity_id: str):
-    """Fix underscore issue before looking up entity metrics."""
+    """Returns engagement metrics for a specific entity."""
     data = load_data()
-    
-    entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+    entity_name = entity_id.replace("_", " ")
 
     return {
         "mentions": data.get("mention_counts", {}).get(entity_name, 0),
@@ -68,10 +84,9 @@ def get_entity_metrics(entity_id: str):
 
 @app.get("/api/entities/{entity_id}/trending")
 def get_entity_trending(entity_id: str):
-    """Fix underscore issue before looking up trending data."""
+    """Returns trending data for a specific entity."""
     data = load_data()
-    
-    entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+    entity_name = entity_id.replace("_", " ")
 
     return {
         "google_trends": data.get("google_trends", {}).get(entity_name, 0),
@@ -82,20 +97,32 @@ def get_entity_trending(entity_id: str):
 
 @app.get("/api/last_updated")
 def get_last_updated():
-    """Return the last modified timestamp of the JSON file."""
+    """Returns the last modified timestamp of the JSON file."""
     if DATA_FILE.exists():
-        timestamp = os.path.getmtime(DATA_FILE)
-        return {"last_updated": timestamp}
+        return {"last_updated": os.path.getmtime(DATA_FILE)}
     return {"message": "No data available."}
 
 @app.post("/api/upload_json")
 def upload_json(file: UploadFile = File(...)):
-    """Upload a new JSON file to update the data."""
+    """Uploads a new JSON file and replaces the current one."""
     try:
         content = file.file.read()
         json_data = json.loads(content)
         with open(DATA_FILE, "w") as f:
             json.dump(json_data, f, indent=4)
-        return {"message": "File uploaded successfully!"}
+        return {"message": "✅ File uploaded successfully!"}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
+
+@app.get("/api/debug")
+def debug_json():
+    """Debug endpoint to inspect JSON file contents."""
+    data = load_data()
+    return data  # Returns full JSON for debugging
+
+# ✅ Load Data on API Startup to Confirm JSON File is Accessible
+print("\n🚀 DEBUG: Testing JSON Load at Startup...")
+startup_data = load_data()
+print(f"\n✅ DEBUG: JSON Data Loaded at Startup (First 500 characters):\n{json.dumps(startup_data, indent=4)[:500]}")
