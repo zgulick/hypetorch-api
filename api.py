@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 import json
 import os
 from pathlib import Path
@@ -6,6 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# ✅ Allow only hypetorch.com to access the API
+origins = [
+    "https://hypetorch.com",
+    "https://www.hypetorch.com"
+]
 
 # Enable CORS for frontend integration
 app.add_middleware(
@@ -15,6 +21,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def check_api_origin(request: Request, call_next):
+    allowed_origins = ["hypetorch.com", "www.hypetorch.com"]
+    
+    # ✅ Check if the request came from the correct domain
+    referer = request.headers.get("referer", "")
+    if not any(origin in referer for origin in allowed_origins):
+        raise HTTPException(status_code=403, detail="Forbidden: Unauthorized origin")
+
+    response = await call_next(request)
+    return response
 
 # ✅ Correct JSON file location for Render
 BASE_DIR = Path("/opt/render/project/src")
