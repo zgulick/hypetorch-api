@@ -16,11 +16,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Define JSON data file path
-DATA_FILE = Path("~/Downloads/hypetorch-scripts/hypetorch_latest_output.json").expanduser()
+# ✅ Correct JSON file location for Render
+BASE_DIR = Path("/opt/render/project/src")
+DATA_FILE = BASE_DIR / "hypetorch_latest_output.json"
 
 # Ensure the data folder exists
-DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ✅ Function to load JSON data safely
 def load_data():
