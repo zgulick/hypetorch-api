@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException
 import json
 import os
 from pathlib import Path
@@ -6,12 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Initialize FastAPI app
 app = FastAPI()
-
-# ✅ Allow only hypetorch.com to access the API
-origins = [
-    "https://hypetorch.com",
-    "https://www.hypetorch.com"
-]
 
 # Enable CORS for frontend integration
 app.add_middleware(
@@ -22,21 +16,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def check_api_origin(request: Request, call_next):
-    allowed_origins = ["hypetorch.com", "www.hypetorch.com"]
-    
-    # ✅ Check if the request came from the correct domain
-    referer = request.headers.get("referer", "")
-    if not any(origin in referer for origin in allowed_origins):
-        raise HTTPException(status_code=403, detail="Forbidden: Unauthorized origin")
+from pathlib import Path
+import json
 
-    response = await call_next(request)
-    return response
-
-# ✅ Correct JSON file location for Render
+# ✅ Set the correct directory path for Render
 BASE_DIR = Path("/opt/render/project/src")
 DATA_FILE = BASE_DIR / "hypetorch_latest_output.json"
+
+# ✅ Ensure the data file exists (create a default if missing)
+if not DATA_FILE.exists():
+    print(f"❌ ERROR: {DATA_FILE} not found! Creating a default file.")
+    with open(DATA_FILE, "w") as f:
+        json.dump({"message": "Default data"}, f)
+
+# ✅ Load JSON safely
+def load_data():
+    try:
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        print(f"❌ ERROR: Corrupted JSON file! Returning empty default.")
+        return {}
+
+# ✅ Debug: Check if JSON loads properly on startup
+print("🚀 Loading data from JSON...")
+startup_data = load_data()
+print(f"✅ JSON Loaded Successfully: {startup_data}")
+
 
 # Ensure the data folder exists
 BASE_DIR.mkdir(parents=True, exist_ok=True)
