@@ -3,6 +3,15 @@ import json
 import os
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
+from db import initialize_database
+from db_operations import save_all_current_data, get_entity_history, get_metric_history, get_top_entities
+
+# Initialize database tables
+try:
+    initialize_database()
+    print("✅ Database initialization complete")
+except Exception as e:
+    print(f"❌ Database initialization error: {e}")
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -127,20 +136,48 @@ def get_last_updated():
         return {"last_updated": os.path.getmtime(DATA_FILE)}
     return {"message": "No data available."}
 
+@app.get("/api/entities/{entity_id}/history")
+def get_entity_history_endpoint(entity_id: str, days: int = 30):
+    """Returns historical HYPE score data for a specific entity."""
+    entity_name = entity_id.replace("_", " ")
+    history = get_entity_history(entity_name, days)
+    return {"name": entity_name, "history": history}
+
+@app.get("/api/entities/{entity_id}/metric_history")
+def get_metric_history_endpoint(entity_id: str, metric_type: str, days: int = 30):
+    """Returns historical metric data for a specific entity."""
+    entity_name = entity_id.replace("_", " ")
+    history = get_metric_history(entity_name, metric_type, days)
+    return {"name": entity_name, "metric": metric_type, "history": history}
+
+@app.get("/api/top_entities")
+def get_top_entities_endpoint(limit: int = 10):
+    """Returns top entities by latest HYPE score."""
+    return get_top_entities(limit)
+
 @app.post("/api/upload_json")
 def upload_json(file: UploadFile = File(...)):
-    """Uploads a new JSON file and replaces the current one."""
+    """Uploads a new JSON file, replaces the current one, and saves to database."""
     try:
         content = file.file.read()
         json_data = json.loads(content)
+        
+        # Save to file system
         with open(DATA_FILE, "w") as f:
             json.dump(json_data, f, indent=4)
-        return {"message": "✅ File uploaded successfully!"}
+        
+        # Save to database
+        save_results = save_all_current_data(json_data)
+        
+        return {
+            "message": "✅ File uploaded successfully!",
+            "database_saved": save_results
+        }
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
-
+    
 @app.get("/api/debug")
 def debug_json():
     """Debug endpoint to inspect JSON file contents."""
