@@ -3,22 +3,15 @@ import json
 import os
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
-from db import initialize_database
-from db_operations import save_all_current_data, get_entity_history, get_metric_history, get_top_entities
-# Add database integration (with fallback if psycopg2 is not available)
-from db_wrapper import DB_AVAILABLE, initialize_database
+from db_sqlite import init_db
+from db_operations_sqlite import save_json_data, get_entity_history, get_latest_data
 
-# Initialize database if possible
-db_initialized = initialize_database()
-print(f"✅ Database status: {'Available' if DB_AVAILABLE else 'Unavailable'}, Initialized: {db_initialized}")
-
-
-# Initialize database tables
+# Initialize SQLite database
 try:
-    initialize_database()
-    print("✅ Database initialization complete")
+    init_db()
+    print("✅ SQLite database initialization complete")
 except Exception as e:
-    print(f"❌ Database initialization error: {e}")
+    print(f"❌ SQLite database initialization error: {e}")
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -45,39 +38,29 @@ if not DATA_FILE.exists():
     with open(DATA_FILE, "w") as f:
         json.dump({"message": "Default data"}, f)
 
-# ✅ Load JSON safely
+
+# ✅ Function to load data (from database, then file fallback)
 def load_data():
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except json.JSONDecodeError:
-        print(f"❌ ERROR: Corrupted JSON file! Returning empty default.")
-        return {}
-
-# ✅ Debug: Check if JSON loads properly on startup
-print("🚀 Loading data from JSON...")
-startup_data = load_data()
-print(f"✅ JSON Loaded Successfully: {startup_data}")
-
-
-# Ensure the data folder exists
-BASE_DIR.mkdir(parents=True, exist_ok=True)
-
-# ✅ Function to load JSON data safely
-def load_data():
-    """Loads the JSON file if it exists, otherwise returns an empty dictionary."""
+    """Loads data from the database first, falls back to JSON file if needed."""
+    # Try to get data from database first
+    db_data = get_latest_data()
+    if db_data:
+        print("✅ Data loaded from database successfully")
+        return db_data
+    
+    # Fall back to file if database is empty
     if not DATA_FILE.exists():
         print(f"❌ ERROR: {DATA_FILE} not found!")
         return {}
     try:
         with open(DATA_FILE, "r") as f:
             data = json.load(f)
-        print("✅ JSON Data Loaded Successfully")
+        print("✅ JSON Data Loaded Successfully from file")
         return data
     except json.JSONDecodeError as e:
         print(f"❌ ERROR: JSON file is corrupted: {e}")
         return {}
-
+    
 # ✅ API Endpoints
 
 @app.get("/api/entities")
@@ -144,52 +127,57 @@ def get_last_updated():
     return {"message": "No data available."}
 
 @app.get("/api/entities/{entity_id}/history")
-def get_entity_history_endpoint(entity_id: str, days: int = 30):
+def get_entity_history_endpoint(entity_id: str, limit: int = 30):
     """Returns historical HYPE score data for a specific entity."""
     entity_name = entity_id.replace("_", " ")
-    history = get_entity_history(entity_name, days)
+    history = get_entity_history(entity_name, limit)
     return {"name": entity_name, "history": history}
 
-@app.get("/api/entities/{entity_id}/metric_history")
-def get_metric_history_endpoint(entity_id: str, metric_type: str, days: int = 30):
-    """Returns historical metric data for a specific entity."""
-    entity_name = entity_id.replace("_", " ")
-    history = get_metric_history(entity_name, metric_type, days)
-    return {"name": entity_name, "metric": metric_type, "history": history}
+#@app.get("/api/entities/{entity_id}/metric_history")
+#def get_metric_history_endpoint(entity_id: str, metric_type: str, days: int = 30):
+#    """Returns historical metric data for a specific entity."""
+#    entity_name = entity_id.replace("_", " ")
+#    history = get_metric_history(entity_name, metric_type, days)
+#    return {"name": entity_name, "metric": metric_type, "history": history}
 
-@app.get("/api/top_entities")
-def get_top_entities_endpoint(limit: int = 10):
-    """Returns top entities by latest HYPE score."""
-    return get_top_entities(limit)
+# @app.get("/api/top_entities")
+#def get_top_entities_endpoint(limit: int = 10):
+#    """Returns top entities by latest HYPE score."""
+#    return get_top_entities(limit)
 
 @app.post("/api/upload_json")
 def upload_json(file: UploadFile = File(...)):
-    """Uploads a new JSON file, replaces the current one, and saves to database."""
+    """Uploads a new JSON file, saves to database, and replaces the current file."""
     try:
         content = file.file.read()
         json_data = json.loads(content)
         
-        # Save to file system
+        # Save to database
+        success, message = save_json_data(json_data)
+        
+        # Also save to file for backward compatibility
         with open(DATA_FILE, "w") as f:
             json.dump(json_data, f, indent=4)
         
-        # Save to database
-        save_results = save_all_current_data(json_data)
-        
         return {
             "message": "✅ File uploaded successfully!",
-            "database_saved": save_results
+            "database_saved": success,
+            "details": message
         }
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
-    
+        
 @app.get("/api/debug")
 def debug_json():
     """Debug endpoint to inspect JSON file contents."""
     data = load_data()
     return data  # Returns full JSON for debugging
+
+# Initialize SQLite database on startup
+print("\n🚀 Initializing SQLite database...")
+init_db()
 
 # ✅ Load Data on API Startup to Confirm JSON File is Accessible
 print("\n🚀 DEBUG: Testing JSON Load at Startup...")
