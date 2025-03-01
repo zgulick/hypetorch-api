@@ -5,6 +5,13 @@ from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from db import initialize_database
 from db_operations import save_all_current_data, get_entity_history, get_metric_history, get_top_entities
+# Add database integration (with fallback if psycopg2 is not available)
+from db_wrapper import DB_AVAILABLE, initialize_database
+
+# Initialize database if possible
+db_initialized = initialize_database()
+print(f"✅ Database status: {'Available' if DB_AVAILABLE else 'Unavailable'}, Initialized: {db_initialized}")
+
 
 # Initialize database tables
 try:
