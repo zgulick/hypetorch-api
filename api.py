@@ -175,6 +175,84 @@ def debug_json():
     data = load_data()
     return data  # Returns full JSON for debugging
 
+@app.get("/api/debug/uploaded_json")
+def debug_uploaded_json():
+    """Debug endpoint to check the structure of the last uploaded JSON."""
+    try:
+        if DATA_FILE.exists():
+            with open(DATA_FILE, "r") as f:
+                data = json.load(f)
+            
+            # Return a summary of the data structure
+            return {
+                "file_exists": True,
+                "keys_present": list(data.keys()),
+                "hype_scores_present": "hype_scores" in data,
+                "num_entities": len(data.get("hype_scores", {})),
+                "first_few_entities": list(data.get("hype_scores", {}).keys())[:5]
+            }
+        else:
+            return {"file_exists": False}
+    except Exception as e:
+        return {"error": str(e)}
+@app.get("/api/debug/entity/{entity_id}")
+def debug_entity_history(entity_id: str, limit: int = 30):
+    """Debug endpoint to check entity history function."""
+    from db_operations_sqlite import get_entity_history
+    
+    entity_name = entity_id.replace("_", " ")
+    
+    # Try directly querying SQLite
+    try:
+        from db_sqlite import get_db_connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT * FROM entity_history WHERE entity_name = ? LIMIT ?",
+            (entity_name, limit)
+        )
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        direct_query = []
+        for row in results:
+            row_dict = {}
+            for key in row.keys():
+                row_dict[key] = row[key] 
+            direct_query.append(row_dict)
+            
+        # Normal function call
+        history = get_entity_history(entity_name, limit)
+        
+        return {
+            "entity_name": entity_name,
+            "direct_query_results": direct_query,
+            "function_results": history,
+            "direct_count": len(direct_query),
+            "function_count": len(history)
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/debug/database")
+def debug_database():
+    """Debug endpoint to check database information."""
+    from pathlib import Path
+    import os
+    from db_sqlite import DB_PATH
+    
+    db_exists = os.path.exists(DB_PATH)
+    
+    return {
+        "database_path": str(DB_PATH),
+        "database_exists": db_exists,
+        "database_size_bytes": os.path.getsize(DB_PATH) if db_exists else 0,
+        "current_directory": os.getcwd(),
+        "render_directory_exists": os.path.exists("/opt/render/project/src")
+    }
+
 # Initialize SQLite database on startup
 print("\n🚀 Initializing SQLite database...")
 init_db()

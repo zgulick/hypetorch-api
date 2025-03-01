@@ -10,6 +10,10 @@ def save_json_data(data):
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Debug info
+        print(f"Debug: Data Keys: {list(data.keys())}")
+        print(f"Debug: Hype scores present: {'hype_scores' in data}")
+        
         # Convert data to JSON string
         data_json = json.dumps(data)
         
@@ -21,7 +25,11 @@ def save_json_data(data):
         )
         
         # Extract and save individual entity history
-        save_entity_history(cursor, data, timestamp)
+        if "hype_scores" in data:
+            print(f"Debug: Found {len(data['hype_scores'])} entities in hype_scores")
+            save_entity_history(cursor, data, timestamp)
+        else:
+            print("Debug: No hype_scores found in data!")
         
         conn.commit()
         conn.close()
