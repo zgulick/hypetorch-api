@@ -74,17 +74,30 @@ def get_entity_details(entity_id: str):
     """Returns detailed hype data for a specific entity."""
     data = load_data()
     entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
-
-    if entity_name not in data.get("hype_scores", {}):
-        raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
-
-    return {
-        "name": entity_name,
-        "hype_score": data.get("hype_scores", {}).get(entity_name, "N/A"),
-        "mentions": data.get("mention_counts", {}).get(entity_name, 0),
-        "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
-        "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
-    }
+    
+    # Case-sensitive direct lookup
+    if entity_name in data.get("hype_scores", {}):
+        return {
+            "name": entity_name,
+            "hype_score": data.get("hype_scores", {}).get(entity_name, "N/A"),
+            "mentions": data.get("mention_counts", {}).get(entity_name, 0),
+            "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
+            "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
+        }
+    
+    # Case-insensitive lookup (fallback)
+    for key in data.get("hype_scores", {}):
+        if key.lower() == entity_name.lower():
+            return {
+                "name": key,  # Return the original case
+                "hype_score": data.get("hype_scores", {}).get(key, "N/A"),
+                "mentions": data.get("mention_counts", {}).get(key, 0),
+                "talk_time": data.get("talk_time_counts", {}).get(key, 0),
+                "sentiment": data.get("player_sentiment_scores", {}).get(key, [])
+            }
+    
+    # If we get here, the entity wasn't found with either method
+    raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
 
 @app.get("/api/hype_scores")
 def get_hype_scores():
@@ -99,24 +112,62 @@ def get_entity_metrics(entity_id: str):
     """Returns engagement metrics for a specific entity."""
     data = load_data()
     entity_name = entity_id.replace("_", " ")
-
+    
+    # Case-sensitive direct lookup
+    if entity_name in data.get("mention_counts", {}):
+        return {
+            "mentions": data.get("mention_counts", {}).get(entity_name, 0),
+            "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
+            "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
+        }
+    
+    # Case-insensitive lookup (fallback)
+    for key in data.get("mention_counts", {}):
+        if key.lower() == entity_name.lower():
+            return {
+                "mentions": data.get("mention_counts", {}).get(key, 0),
+                "talk_time": data.get("talk_time_counts", {}).get(key, 0),
+                "sentiment": data.get("player_sentiment_scores", {}).get(key, [])
+            }
+    
+    # If we get here, return zeros rather than an error
     return {
-        "mentions": data.get("mention_counts", {}).get(entity_name, 0),
-        "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
-        "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
+        "mentions": 0,
+        "talk_time": 0,
+        "sentiment": []
     }
 
 @app.get("/api/entities/{entity_id}/trending")
 def get_entity_trending(entity_id: str):
     """Returns trending data for a specific entity."""
     data = load_data()
-    entity_name = entity_id.replace("_", " ")
-
+    entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+    
+    # Case-sensitive direct lookup
+    if entity_name in data.get("google_trends", {}):
+        return {
+            "google_trends": data.get("google_trends", {}).get(entity_name, 0),
+            "wikipedia_views": data.get("wikipedia_views", {}).get(entity_name, 0),
+            "reddit_mentions": data.get("reddit_mentions", {}).get(entity_name, 0),
+            "google_news_mentions": data.get("google_news_mentions", {}).get(entity_name, 0)
+        }
+    
+    # Case-insensitive lookup (fallback)
+    for key in data.get("google_trends", {}):
+        if key.lower() == entity_name.lower():
+            return {
+                "google_trends": data.get("google_trends", {}).get(key, 0),
+                "wikipedia_views": data.get("wikipedia_views", {}).get(key, 0),
+                "reddit_mentions": data.get("reddit_mentions", {}).get(key, 0),
+                "google_news_mentions": data.get("google_news_mentions", {}).get(key, 0)
+            }
+    
+    # If we get here, return zeros rather than an error
     return {
-        "google_trends": data.get("google_trends", {}).get(entity_name, 0),
-        "wikipedia_views": data.get("wikipedia_views", {}).get(entity_name, 0),
-        "reddit_mentions": data.get("reddit_mentions", {}).get(entity_name, 0),
-        "google_news_mentions": data.get("google_news_mentions", {}).get(entity_name, 0)
+        "google_trends": 0,
+        "wikipedia_views": 0,
+        "reddit_mentions": 0,
+        "google_news_mentions": 0
     }
 
 @app.get("/api/last_updated")
