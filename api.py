@@ -39,27 +39,17 @@ if not DATA_FILE.exists():
         json.dump({"message": "Default data"}, f)
 
 
-# ✅ Function to load data (from database, then file fallback)
 def load_data():
-    """Loads data from the database first, falls back to JSON file if needed."""
-    # Try to get data from database first
+    """Loads data from the database only, without falling back to JSON file."""
+    # Try to get data from database
     db_data = get_latest_data()
     if db_data:
         print("✅ Data loaded from database successfully")
         return db_data
     
-    # Fall back to file if database is empty
-    if not DATA_FILE.exists():
-        print(f"❌ ERROR: {DATA_FILE} not found!")
-        return {}
-    try:
-        with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-        print("✅ JSON Data Loaded Successfully from file")
-        return data
-    except json.JSONDecodeError as e:
-        print(f"❌ ERROR: JSON file is corrupted: {e}")
-        return {}
+    # If database is empty, return empty data
+    print("❌ WARNING: No data found in database!")
+    return {}
     
 # ✅ API Endpoints
 
@@ -307,6 +297,13 @@ def debug_database():
 # Initialize SQLite database on startup
 print("\n🚀 Initializing SQLite database...")
 init_db()
+
+# ✅ Load Data on API Startup to Confirm Database Load
+print("\n🚀 Attempting to load data at startup...")
+startup_data = load_data()
+print(f"\n✅ DEBUG: Startup Data Summary:")
+print(f"Total keys: {len(startup_data)}")
+print(f"Hype Scores: {len(startup_data.get('hype_scores', {}))}")
 
 # ✅ Load Data on API Startup to Confirm JSON File is Accessible
 print("\n🚀 DEBUG: Testing JSON Load at Startup...")
