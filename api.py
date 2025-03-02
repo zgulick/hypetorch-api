@@ -3,15 +3,34 @@ import json
 import os
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
-from db_sqlite import init_db
-from db_operations_sqlite import save_json_data, get_entity_history, get_latest_data
+import time
 
-# Initialize SQLite database
+# Import our new database functions
+from db_wrapper import initialize_database, DB_AVAILABLE
+from db_operations import save_all_data, load_latest_data, get_entity_history_data
+
+# Initialize the database
 try:
-    init_db()
-    print("✅ SQLite database initialization complete")
+    db_initialized = initialize_database()
+    if DB_AVAILABLE == True:
+        print("✅ PostgreSQL database initialized successfully")
+    elif DB_AVAILABLE == "SQLITE":
+        print("✅ SQLite database initialized successfully")
+    else:
+        print("⚠️ Running in file-only mode - no database available")
 except Exception as e:
-    print(f"❌ SQLite database initialization error: {e}")
+    print(f"❌ Database initialization error: {e}")
+    db_initialized = False
+
+# Set the correct directory path for Render
+BASE_DIR = Path("/opt/render/project/src") if os.path.exists("/opt/render/project") else Path(".")
+DATA_FILE = BASE_DIR / "hypetorch_latest_output.json"
+
+# Ensure the data file exists (create a default if missing)
+if not DATA_FILE.exists():
+    print(f"❌ ERROR: {DATA_FILE} not found! Creating a default file.")
+    with open(DATA_FILE, "w") as f:
+        json.dump({"message": "Default data"}, f)
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -25,33 +44,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from pathlib import Path
-import json
-
-# ✅ Set the correct directory path for Render
-BASE_DIR = Path("/opt/render/project/src")
-DATA_FILE = BASE_DIR / "hypetorch_latest_output.json"
-
-# ✅ Ensure the data file exists (create a default if missing)
-if not DATA_FILE.exists():
-    print(f"❌ ERROR: {DATA_FILE} not found! Creating a default file.")
-    with open(DATA_FILE, "w") as f:
-        json.dump({"message": "Default data"}, f)
-
-
 def load_data():
-    """Loads data from the database only, without falling back to JSON file."""
-    # Try to get data from database
-    db_data = get_latest_data()
-    if db_data:
-        print("✅ Data loaded from database successfully")
-        return db_data
+    """Load data through our database operations module"""
+    data = load_latest_data()
+    if data:
+        print("✅ Data loaded successfully")
+        return data
     
-    # If database is empty, return empty data
-    print("❌ WARNING: No data found in database!")
+    print("❌ WARNING: No data found!")
     return {}
     
-# ✅ API Endpoints
+# API Endpoints
 
 @app.get("/api/entities")
 def get_entities():
@@ -94,7 +97,7 @@ def get_hype_scores():
     """Returns all hype scores from the JSON file."""
     data = load_data()
     if "hype_scores" not in data:
-        raise HTTPException(status_code=500, detail="❌ ERROR: 'hype_scores' field missing in JSON file.")
+        raise HTTPException(status_code=500, detail="❌ ERROR: 'hype_scores' field missing in data.")
     return data["hype_scores"]
 
 @app.get("/api/entities/{entity_id}/metrics")
@@ -171,148 +174,64 @@ def get_last_updated():
 def get_entity_history_endpoint(entity_id: str, limit: int = 30):
     """Returns historical HYPE score data for a specific entity."""
     entity_name = entity_id.replace("_", " ")
-    history = get_entity_history(entity_name, limit)
+    history = get_entity_history_data(entity_name, limit)
     return {"name": entity_name, "history": history}
-
-#@app.get("/api/entities/{entity_id}/metric_history")
-#def get_metric_history_endpoint(entity_id: str, metric_type: str, days: int = 30):
-#    """Returns historical metric data for a specific entity."""
-#    entity_name = entity_id.replace("_", " ")
-#    history = get_metric_history(entity_name, metric_type, days)
-#    return {"name": entity_name, "metric": metric_type, "history": history}
-
-# @app.get("/api/top_entities")
-#def get_top_entities_endpoint(limit: int = 10):
-#    """Returns top entities by latest HYPE score."""
-#    return get_top_entities(limit)
 
 @app.post("/api/upload_json")
 def upload_json(file: UploadFile = File(...)):
+    """Uploads a new JSON file, saves to database, and replaces the current file."""
     try:
         content = file.file.read()
         json_data = json.loads(content)
         
-        # Validate JSON structure
-        if not json_data or 'hype_scores' not in json_data:
-            raise HTTPException(status_code=400, detail="Invalid JSON format. Missing hype_scores.")
-        
         # Save to database
-        success, message = save_json_data(json_data)
+        success, message = save_all_data(json_data)
         
         # Also save to file for backward compatibility
         with open(DATA_FILE, "w") as f:
             json.dump(json_data, f, indent=4)
         
-        if not success:
-            raise HTTPException(status_code=500, detail=message)
-        
         return {
             "message": "✅ File uploaded successfully!",
             "database_saved": success,
-            "details": message
+            "details": message,
+            "db_available": DB_AVAILABLE
         }
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
-    
+        
 @app.get("/api/debug")
 def debug_json():
     """Debug endpoint to inspect JSON file contents."""
     data = load_data()
     return data  # Returns full JSON for debugging
 
-@app.get("/api/debug/uploaded_json")
-def debug_uploaded_json():
-    """Debug endpoint to check the structure of the last uploaded JSON."""
-    try:
-        if DATA_FILE.exists():
-            with open(DATA_FILE, "r") as f:
-                data = json.load(f)
-            
-            # Return a summary of the data structure
-            return {
-                "file_exists": True,
-                "keys_present": list(data.keys()),
-                "hype_scores_present": "hype_scores" in data,
-                "num_entities": len(data.get("hype_scores", {})),
-                "first_few_entities": list(data.get("hype_scores", {}).keys())[:5]
-            }
-        else:
-            return {"file_exists": False}
-    except Exception as e:
-        return {"error": str(e)}
-    
-@app.get("/api/debug/entity/{entity_id}")
-def debug_entity_history(entity_id: str, limit: int = 30):
-    """Debug endpoint to check entity history function."""
-    from db_operations_sqlite import get_entity_history
-    
-    entity_name = entity_id.replace("_", " ")
-    
-    # Try directly querying SQLite
-    try:
-        from db_sqlite import get_db_connection
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "SELECT * FROM entity_history WHERE entity_name = ? LIMIT ?",
-            (entity_name, limit)
-        )
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        direct_query = []
-        for row in results:
-            row_dict = {}
-            for key in row.keys():
-                row_dict[key] = row[key] 
-            direct_query.append(row_dict)
-            
-        # Normal function call
-        history = get_entity_history(entity_name, limit)
-        
-        return {
-            "entity_name": entity_name,
-            "direct_query_results": direct_query,
-            "function_results": history,
-            "direct_count": len(direct_query),
-            "function_count": len(history)
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
 @app.get("/api/debug/database")
 def debug_database():
     """Debug endpoint to check database information."""
-    from pathlib import Path
-    import os
-    from db_sqlite import DB_PATH
-    
-    db_exists = os.path.exists(DB_PATH)
-    
     return {
-        "database_path": str(DB_PATH),
-        "database_exists": db_exists,
-        "database_size_bytes": os.path.getsize(DB_PATH) if db_exists else 0,
+        "database_available": DB_AVAILABLE,
+        "database_type": "PostgreSQL" if DB_AVAILABLE == True else 
+                        "SQLite" if DB_AVAILABLE == "SQLITE" else "None",
+        "database_path": str(BASE_DIR),
+        "database_file_exists": os.path.exists(DATA_FILE),
+        "database_file_size_bytes": os.path.getsize(DATA_FILE) if os.path.exists(DATA_FILE) else 0,
         "current_directory": os.getcwd(),
         "render_directory_exists": os.path.exists("/opt/render/project/src")
     }
 
-# Initialize SQLite database on startup
-print("\n🚀 Initializing SQLite database...")
-init_db()
+@app.get("/api/health")
+def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "database": DB_AVAILABLE
+    }
 
-# ✅ Load Data on API Startup to Confirm Database Load
-print("\n🚀 Attempting to load data at startup...")
+# Load Data on API Startup to Confirm Access
+print("\n🚀 DEBUG: Testing Data Load at Startup...")
 startup_data = load_data()
-print(f"\n✅ DEBUG: Startup Data Summary:")
-print(f"Total keys: {len(startup_data)}")
-print(f"Hype Scores: {len(startup_data.get('hype_scores', {}))}")
-
-# ✅ Load Data on API Startup to Confirm JSON File is Accessible
-print("\n🚀 DEBUG: Testing JSON Load at Startup...")
-startup_data = load_data()
-print(f"\n✅ DEBUG: JSON Data Loaded at Startup (First 500 characters):\n{json.dumps(startup_data, indent=4)[:500]}")
+print(f"\n✅ DEBUG: Data Loaded at Startup (Keys): {list(startup_data.keys())}")
