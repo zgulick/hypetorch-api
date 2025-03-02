@@ -3,9 +3,9 @@ import os
 import json
 from pathlib import Path
 
-# Database location - uses /opt/render/project/src for Render, or current directory for local dev
-BASE_DIR = Path("/opt/render/project/src") if os.path.exists("/opt/render/project") else Path(".")
-DB_PATH = BASE_DIR / "hypetorch.db"
+# Use an environment variable for persistent storage
+BASE_DIR = os.environ.get('RENDER_DATA_DIR', '/opt/render/project/src')
+DB_PATH = Path(BASE_DIR) / "hypetorch.db"
 
 def get_db_connection():
     """Create a connection to the SQLite database"""

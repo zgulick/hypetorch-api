@@ -79,13 +79,19 @@ def get_latest_data():
         
         # Get the most recent entry
         cursor.execute(
-            "SELECT data_json FROM hype_data ORDER BY timestamp DESC LIMIT 1"
+            "SELECT data_json, timestamp FROM hype_data ORDER BY timestamp DESC LIMIT 1"
         )
         result = cursor.fetchone()
         conn.close()
         
         if result:
-            return json.loads(result['data_json'])
+            print(f"✅ Found database entry from: {result['timestamp']}")
+            data = json.loads(result['data_json'])
+            print(f"📊 Loaded data keys: {list(data.keys())}")
+            print(f"🏀 Number of hype scores: {len(data.get('hype_scores', {}))}")
+            return data
+        
+        print("❌ No data found in database")
         return {}
     except Exception as e:
         print(f"❌ Error retrieving data: {e}")
