@@ -188,10 +188,13 @@ def get_entity_history_endpoint(entity_id: str, limit: int = 30):
 
 @app.post("/api/upload_json")
 def upload_json(file: UploadFile = File(...)):
-    """Uploads a new JSON file, saves to database, and replaces the current file."""
     try:
         content = file.file.read()
         json_data = json.loads(content)
+        
+        # Validate JSON structure
+        if not json_data or 'hype_scores' not in json_data:
+            raise HTTPException(status_code=400, detail="Invalid JSON format. Missing hype_scores.")
         
         # Save to database
         success, message = save_json_data(json_data)
@@ -199,6 +202,9 @@ def upload_json(file: UploadFile = File(...)):
         # Also save to file for backward compatibility
         with open(DATA_FILE, "w") as f:
             json.dump(json_data, f, indent=4)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
         
         return {
             "message": "✅ File uploaded successfully!",
@@ -209,7 +215,7 @@ def upload_json(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
-        
+    
 @app.get("/api/debug")
 def debug_json():
     """Debug endpoint to inspect JSON file contents."""
@@ -236,6 +242,7 @@ def debug_uploaded_json():
             return {"file_exists": False}
     except Exception as e:
         return {"error": str(e)}
+    
 @app.get("/api/debug/entity/{entity_id}")
 def debug_entity_history(entity_id: str, limit: int = 30):
     """Debug endpoint to check entity history function."""
