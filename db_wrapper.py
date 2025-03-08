@@ -255,41 +255,6 @@ def save_entity_history_pg(cursor, data, timestamp):
         )
     print(f"✅ Saved history for {len(hype_scores)} entities to PostgreSQL")
 
-def add_rodmn_column():
-    """Add the rodmn_score column to entity_history table if it doesn't exist."""
-    conn = get_pg_connection()
-    if not conn:
-        print("❌ Failed to connect to PostgreSQL database")
-        return False
-        
-    try:
-        with conn.cursor() as cursor:
-            # Check if column exists
-            cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='entity_history' AND column_name='rodmn_score'
-            """)
-            
-            if not cursor.fetchone():
-                print("Adding rodmn_score column to entity_history table...")
-                cursor.execute("""
-                ALTER TABLE entity_history 
-                ADD COLUMN rodmn_score REAL
-                """)
-                
-                conn.commit()
-                print("✅ Successfully added rodmn_score column")
-            else:
-                print("✅ rodmn_score column already exists")
-                
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"❌ Error adding column: {e}")
-        conn.rollback()
-        conn.close()
-        return False
 
 def save_entity_history_sqlite(cursor, data, timestamp):
     """Extract entity data and save to SQLite entity_history table"""
@@ -320,7 +285,6 @@ def save_entity_history_sqlite(cursor, data, timestamp):
                 reddit_mentions.get(entity_name, 0),
                 google_trends.get(entity_name, 0),
                 google_news_mentions.get(entity_name, 0),
-                rodmn_score.get(entity_name, 0)
             )
         )
     print(f"✅ Saved history for {len(hype_scores)} entities to SQLite")
@@ -445,6 +409,44 @@ def get_entity_history(entity_name, limit=10):
     except Exception as e:
         print(f"❌ Error retrieving entity history: {e}")
         return []
+
+def add_rodmn_column():
+    """Add the rodmn_score column to entity_history table if it doesn't exist."""
+    print("Checking for rodmn_score column in entity_history table...")
+    conn = get_pg_connection()
+    if not conn:
+        print("❌ Failed to connect to PostgreSQL database")
+        return False
+        
+    try:
+        with conn.cursor() as cursor:
+            # Check if column exists
+            cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='entity_history' AND column_name='rodmn_score'
+            """)
+            
+            if not cursor.fetchone():
+                print("Adding rodmn_score column to entity_history table...")
+                cursor.execute("""
+                ALTER TABLE entity_history 
+                ADD COLUMN rodmn_score REAL
+                """)
+                
+                conn.commit()
+                print("✅ Successfully added rodmn_score column")
+            else:
+                print("✅ rodmn_score column already exists")
+                
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"❌ Error adding column: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        return False
 
 # Initialize database on module import
 initialize_database()
