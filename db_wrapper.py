@@ -237,7 +237,7 @@ def save_entity_history_pg(cursor, data, timestamp):
             """
             INSERT INTO entity_history 
             (entity_name, timestamp, hype_score, mentions, talk_time, 
-             wikipedia_views, reddit_mentions, google_trends, google_news_mentions, rodmn)
+             wikipedia_views, reddit_mentions, google_trends, google_news_mentions, rodmn_score)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
