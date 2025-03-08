@@ -128,7 +128,8 @@ def init_pg_db():
                 wikipedia_views INTEGER,
                 reddit_mentions INTEGER,
                 google_trends INTEGER,
-                google_news_mentions INTEGER
+                google_news_mentions INTEGER,
+                rodmn_score REAL
             )
             """)
         
@@ -228,6 +229,7 @@ def save_entity_history_pg(cursor, data, timestamp):
     reddit_mentions = data.get("reddit_mentions", {})
     google_trends = data.get("google_trends", {})
     google_news_mentions = data.get("google_news_mentions", {})
+    rodmn_scores = data.get("rodmn_scores", {})
     
     # Process all entities found in hype_scores
     for entity_name, hype_score in hype_scores.items():
@@ -235,8 +237,8 @@ def save_entity_history_pg(cursor, data, timestamp):
             """
             INSERT INTO entity_history 
             (entity_name, timestamp, hype_score, mentions, talk_time, 
-             wikipedia_views, reddit_mentions, google_trends, google_news_mentions)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+             wikipedia_views, reddit_mentions, google_trends, google_news_mentions, rodmn)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 entity_name,
@@ -247,7 +249,8 @@ def save_entity_history_pg(cursor, data, timestamp):
                 wikipedia_views.get(entity_name, 0),
                 reddit_mentions.get(entity_name, 0),
                 google_trends.get(entity_name, 0),
-                google_news_mentions.get(entity_name, 0)
+                google_news_mentions.get(entity_name, 0),
+                rodmn_scores.get(entity_name, 0)
             )
         )
     print(f"✅ Saved history for {len(hype_scores)} entities to PostgreSQL")

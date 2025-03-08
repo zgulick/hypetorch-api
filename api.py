@@ -8,6 +8,15 @@ import time
 # Import our new database functions
 from db_wrapper import initialize_database, DB_AVAILABLE
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
+from typing import Optional
+from fastapi import Query
+from db_historical import (
+    store_hype_data, 
+    get_entity_history, 
+    get_entity_metrics_history,
+    get_trending_entities
+)
+
 
 # Initialize the database
 try:
@@ -73,6 +82,7 @@ def get_entity_details(entity_id: str):
         return {
             "name": entity_name,
             "hype_score": data.get("hype_scores", {}).get(entity_name, "N/A"),
+            "rodmn_score": data.get("rodmn_scores", {}).get(entity_name, "N/A"),  # This is the new line
             "mentions": data.get("mention_counts", {}).get(entity_name, 0),
             "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
             "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
@@ -84,11 +94,11 @@ def get_entity_details(entity_id: str):
             return {
                 "name": key,  # Return the original case
                 "hype_score": data.get("hype_scores", {}).get(key, "N/A"),
+                "rodmn_score": data.get("rodmn_scores", {}).get(key, "N/A"),  # This is the new line
                 "mentions": data.get("mention_counts", {}).get(key, 0),
                 "talk_time": data.get("talk_time_counts", {}).get(key, 0),
                 "sentiment": data.get("player_sentiment_scores", {}).get(key, [])
             }
-    
     # If we get here, the entity wasn't found with either method
     raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
 
@@ -99,6 +109,32 @@ def get_hype_scores():
     if "hype_scores" not in data:
         raise HTTPException(status_code=500, detail="❌ ERROR: 'hype_scores' field missing in data.")
     return data["hype_scores"]
+
+@app.get("/api/rodmn_scores")
+def get_rodmn_scores():
+    """Returns all RODMN scores from the JSON file."""
+    data = load_data()
+    if "rodmn_scores" not in data:
+        # Return empty dictionary instead of throwing error
+        print("⚠️ WARNING: 'rodmn_scores' field missing in data.")
+        return {}
+    return data["rodmn_scores"]
+
+@app.get("/api/controversial")
+def get_controversial_entities(limit: int = 10):
+    """Returns entities sorted by RODMN score (most controversial first)."""
+    data = load_data()
+    if "rodmn_scores" not in data:
+        # Return empty list instead of throwing error
+        print("⚠️ WARNING: 'rodmn_scores' field missing in data.")
+        return []
+    
+    # Sort entities by RODMN score and take top 'limit'
+    rodmn_scores = data["rodmn_scores"]
+    sorted_entities = sorted(rodmn_scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+    
+    # Format the response
+    return [{"name": name, "rodmn_score": score} for name, score in sorted_entities]
 
 @app.get("/api/entities/{entity_id}/metrics")
 def get_entity_metrics(entity_id: str):
@@ -111,7 +147,8 @@ def get_entity_metrics(entity_id: str):
         return {
             "mentions": data.get("mention_counts", {}).get(entity_name, 0),
             "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
-            "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
+            "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, []),
+            "rodmn_score": data.get("rodmn_scores", {}).get(entity_name, 0)  # This is the new line
         }
     
     # Case-insensitive lookup (fallback)
@@ -120,14 +157,16 @@ def get_entity_metrics(entity_id: str):
             return {
                 "mentions": data.get("mention_counts", {}).get(key, 0),
                 "talk_time": data.get("talk_time_counts", {}).get(key, 0),
-                "sentiment": data.get("player_sentiment_scores", {}).get(key, [])
+                "sentiment": data.get("player_sentiment_scores", {}).get(key, []),
+                "rodmn_score": data.get("rodmn_scores", {}).get(key, 0)  # This is the new line
             }
     
     # If we get here, return zeros rather than an error
     return {
         "mentions": 0,
         "talk_time": 0,
-        "sentiment": []
+        "sentiment": [],
+        "rodmn_score": 0  # This is the new line
     }
 
 @app.get("/api/entities/{entity_id}/trending")
@@ -176,6 +215,67 @@ def get_entity_history_endpoint(entity_id: str, limit: int = 30):
     entity_name = entity_id.replace("_", " ")
     history = get_entity_history_data(entity_name, limit)
     return {"name": entity_name, "history": history}
+
+@app.post("/api/store_historical")
+def store_historical_data(time_period: str = Query("last_30_days"), file: UploadFile = File(...)):
+    """Store current HYPE data as a historical snapshot."""
+    try:
+        content = file.file.read()
+        json_data = json.loads(content)
+        
+        # Store in database
+        success = store_hype_data(json_data, time_period)
+        
+        return {
+            "message": "✅ Historical data saved successfully" if success else "❌ Failed to save historical data",
+            "success": success,
+            "time_period": time_period
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
+
+@app.get("/api/entities/{entity_id}/history")
+def get_entity_hype_history(
+    entity_id: str, 
+    limit: int = 30, 
+    start_date: Optional[str] = None, 
+    end_date: Optional[str] = None
+):
+    """Returns historical HYPE score data for a specific entity."""
+    entity_name = entity_id.replace("_", " ")
+    history = get_entity_history(entity_name, limit, start_date, end_date)
+    return {"name": entity_name, "history": history}
+
+@app.get("/api/entities/{entity_id}/metrics/{metric_type}/history")
+def get_entity_metric_history(
+    entity_id: str, 
+    metric_type: str,
+    limit: int = 30, 
+    start_date: Optional[str] = None, 
+    end_date: Optional[str] = None
+):
+    """Returns historical metrics data for a specific entity and metric type."""
+    entity_name = entity_id.replace("_", " ")
+    history = get_entity_metrics_history(entity_name, metric_type, limit, start_date, end_date)
+    return {
+        "name": entity_name, 
+        "metric": metric_type, 
+        "history": history
+    }
+
+@app.get("/api/trending")
+def get_trending_entities_endpoint(
+    metric: str = Query("hype_scores"),
+    limit: int = 10,
+    time_period: Optional[str] = None,
+    category: Optional[str] = None,
+    subcategory: Optional[str] = None
+):
+    """Returns trending entities based on recent changes in metrics."""
+    trending = get_trending_entities(metric, limit, time_period, category, subcategory)
+    return {"trending": trending}
 
 @app.post("/api/upload_json")
 def upload_json(file: UploadFile = File(...)):
