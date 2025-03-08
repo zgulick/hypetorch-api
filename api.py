@@ -144,31 +144,21 @@ def get_entity_metrics(entity_id: str):
     data = load_data()
     entity_name = entity_id.replace("_", " ")
     
-    # Case-sensitive direct lookup
-    if entity_name in data.get("mention_counts", {}):
-        return {
-            "mentions": data.get("mention_counts", {}).get(entity_name, 0),
-            "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
-            "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, []),
-            "rodmn_score": data.get("rodmn_scores", {}).get(entity_name, 0)  # This is the new line
-        }
+    # Create case-insensitive maps of all the data dictionaries
+    mention_counts_lower = {k.lower(): v for k, v in data.get("mention_counts", {}).items()}
+    talk_time_lower = {k.lower(): v for k, v in data.get("talk_time_counts", {}).items()}
+    sentiment_lower = {k.lower(): v for k, v in data.get("player_sentiment_scores", {}).items()}
+    rodmn_lower = {k.lower(): v for k, v in data.get("rodmn_scores", {}).items()}
     
-    # Case-insensitive lookup (fallback)
-    for key in data.get("mention_counts", {}):
-        if key.lower() == entity_name.lower():
-            return {
-                "mentions": data.get("mention_counts", {}).get(key, 0),
-                "talk_time": data.get("talk_time_counts", {}).get(key, 0),
-                "sentiment": data.get("player_sentiment_scores", {}).get(key, []),
-                "rodmn_score": data.get("rodmn_scores", {}).get(key, 0)  # This is the new line
-            }
+    # Use lowercase key for all lookups
+    entity_lower = entity_name.lower()
     
-    # If we get here, return zeros rather than an error
+    # Look up all metrics using case-insensitive keys
     return {
-        "mentions": 0,
-        "talk_time": 0,
-        "sentiment": [],
-        "rodmn_score": 0  # This is the new line
+        "mentions": mention_counts_lower.get(entity_lower, 0),
+        "talk_time": talk_time_lower.get(entity_lower, 0),
+        "sentiment": sentiment_lower.get(entity_lower, []),
+        "rodmn_score": rodmn_lower.get(entity_lower, 0)
     }
 
 @app.get("/api/entities/{entity_id}/trending")
