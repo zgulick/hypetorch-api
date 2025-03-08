@@ -21,6 +21,8 @@ from db_historical import (
 # Initialize the database
 try:
     db_initialized = initialize_database()
+    # Also check and add rodmn_score column if needed
+    add_rodmn_column()
     if DB_AVAILABLE == True:
         print("✅ PostgreSQL database initialized successfully")
     elif DB_AVAILABLE == "SQLITE":
