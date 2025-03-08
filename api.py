@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import time
 
 # Import our new database functions
-from db_wrapper import initialize_database, DB_AVAILABLE
+from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
 from typing import Optional
 from fastapi import Query
