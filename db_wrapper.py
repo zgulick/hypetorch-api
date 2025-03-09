@@ -6,6 +6,7 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
+from db_utils import with_retry, with_connection, transactional
 
 # Flag to track if database functionality is available
 DB_AVAILABLE = False
@@ -91,7 +92,7 @@ def get_pg_connection():
         return conn
     except Exception as e:
         print(f"❌ PostgreSQL connection error: {e}")
-        return None
+        raise  # Re-raise so our retry decorator can catch it
 
 def init_pg_db():
     """Create necessary tables if they don't exist"""
@@ -153,6 +154,7 @@ def initialize_database():
         return False
 
 # Save JSON data to the database
+@with_retry(max_retries=3)
 def save_json_data(data):
     """Save JSON data to the appropriate database"""
     try:
@@ -290,6 +292,7 @@ def save_entity_history_sqlite(cursor, data, timestamp):
     print(f"✅ Saved history for {len(hype_scores)} entities to SQLite")
 
 # Get latest data from the database
+@with_retry(max_retries=3)
 def get_latest_data():
     """Retrieve the most recent data from the database"""
     try:
@@ -341,6 +344,7 @@ def get_latest_data():
             return {}
 
 # Get entity history from the database
+@with_retry(max_retries=3)
 def get_entity_history(entity_name, limit=10):
     """Get historical data for a specific entity"""
     try:
@@ -447,6 +451,158 @@ def add_rodmn_column():
             conn.rollback()
             conn.close()
         return False
+
+@with_connection(get_pg_connection)
+@transactional
+def save_to_pg(conn, data, data_json, timestamp):
+    """Save data to PostgreSQL with transaction handling"""
+    cursor = conn.cursor()
+    
+    # Save to hype_data table
+    cursor.execute(
+        "INSERT INTO hype_data (timestamp, data_json) VALUES (%s, %s)",
+        (timestamp, data_json)
+    )
+    
+    # Extract and save individual entity history
+    if "hype_scores" in data:
+        print(f"Debug: Found {len(data['hype_scores'])} entities in hype_scores")
+        save_entity_history_pg(cursor, data, timestamp)
+    
+    print("✅ Data saved to PostgreSQL successfully")
+
+@with_connection(get_sqlite_connection)
+@transactional
+def save_to_sqlite(conn, data, data_json, timestamp):
+    """Save data to SQLite with transaction handling"""
+    cursor = conn.cursor()
+    
+    # Save to hype_data table
+    cursor.execute(
+        "INSERT INTO hype_data (timestamp, data_json) VALUES (?, ?)",
+        (timestamp, data_json)
+    )
+    
+    # Extract and save individual entity history
+    if "hype_scores" in data:
+        print(f"Debug: Found {len(data['hype_scores'])} entities in hype_scores")
+        save_entity_history_sqlite(cursor, data, timestamp)
+    
+    print("✅ Data saved to SQLite successfully")
+
+def save_entity_history_pg(cursor, data, timestamp):
+    """Extract entity data and save to PostgreSQL entity_history table"""
+    hype_scores = data.get("hype_scores", {})
+    mention_counts = data.get("mention_counts", {})
+    talk_time_counts = data.get("talk_time_counts", {})
+    wikipedia_views = data.get("wikipedia_views", {})
+    reddit_mentions = data.get("reddit_mentions", {})
+    google_trends = data.get("google_trends", {})
+    google_news_mentions = data.get("google_news_mentions", {})
+    rodmn_scores = data.get("rodmn_scores", {})
+    
+    # Process all entities found in hype_scores
+    successful_inserts = 0
+    for entity_name, hype_score in hype_scores.items():
+        try:
+            cursor.execute(
+                """
+                INSERT INTO entity_history 
+                (entity_name, timestamp, hype_score, mentions, talk_time, 
+                 wikipedia_views, reddit_mentions, google_trends, google_news_mentions, rodmn_score)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    entity_name,
+                    timestamp,
+                    hype_score,
+                    mention_counts.get(entity_name, 0),
+                    talk_time_counts.get(entity_name, 0),
+                    wikipedia_views.get(entity_name, 0),
+                    reddit_mentions.get(entity_name, 0),
+                    google_trends.get(entity_name, 0),
+                    google_news_mentions.get(entity_name, 0),
+                    rodmn_scores.get(entity_name, 0)
+                )
+            )
+            successful_inserts += 1
+        except Exception as e:
+            print(f"⚠️ Error saving history for {entity_name} to PostgreSQL: {e}")
+            # Continue with other entities even if one fails
+            continue
+    
+    print(f"✅ Saved history for {successful_inserts}/{len(hype_scores)} entities to PostgreSQL")
+
+def save_entity_history_sqlite(cursor, data, timestamp):
+    """Extract entity data and save to SQLite entity_history table"""
+    hype_scores = data.get("hype_scores", {})
+    mention_counts = data.get("mention_counts", {})
+    talk_time_counts = data.get("talk_time_counts", {})
+    wikipedia_views = data.get("wikipedia_views", {})
+    reddit_mentions = data.get("reddit_mentions", {})
+    google_trends = data.get("google_trends", {})
+    google_news_mentions = data.get("google_news_mentions", {})
+    rodmn_scores = data.get("rodmn_scores", {})
+    
+    # Process all entities found in hype_scores
+    successful_inserts = 0
+    for entity_name, hype_score in hype_scores.items():
+        try:
+            # Check if rodmn_score column exists in SQLite
+            has_rodmn = True
+            try:
+                cursor.execute("SELECT rodmn_score FROM entity_history LIMIT 1")
+            except:
+                has_rodmn = False
+            
+            if has_rodmn:
+                cursor.execute(
+                    """
+                    INSERT INTO entity_history 
+                    (entity_name, timestamp, hype_score, mentions, talk_time, 
+                     wikipedia_views, reddit_mentions, google_trends, google_news_mentions, rodmn_score)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entity_name,
+                        timestamp,
+                        hype_score,
+                        mention_counts.get(entity_name, 0),
+                        talk_time_counts.get(entity_name, 0),
+                        wikipedia_views.get(entity_name, 0),
+                        reddit_mentions.get(entity_name, 0),
+                        google_trends.get(entity_name, 0),
+                        google_news_mentions.get(entity_name, 0),
+                        rodmn_scores.get(entity_name, 0)
+                    )
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO entity_history 
+                    (entity_name, timestamp, hype_score, mentions, talk_time, 
+                     wikipedia_views, reddit_mentions, google_trends, google_news_mentions)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entity_name,
+                        timestamp,
+                        hype_score,
+                        mention_counts.get(entity_name, 0),
+                        talk_time_counts.get(entity_name, 0),
+                        wikipedia_views.get(entity_name, 0),
+                        reddit_mentions.get(entity_name, 0),
+                        google_trends.get(entity_name, 0),
+                        google_news_mentions.get(entity_name, 0)
+                    )
+                )
+            successful_inserts += 1
+        except Exception as e:
+            print(f"⚠️ Error saving history for {entity_name} to SQLite: {e}")
+            # Continue with other entities even if one fails
+            continue
+    
+    print(f"✅ Saved history for {successful_inserts}/{len(hype_scores)} entities to SQLite")    
 
 # Initialize database on module import
 initialize_database()

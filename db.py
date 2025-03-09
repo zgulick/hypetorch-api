@@ -1,6 +1,12 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+load_dotenv(os.path.join(parent_dir, '.env'))
 
 # Get database URL from environment variable (we'll set this in Render)
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -10,8 +16,12 @@ DB_ENVIRONMENT = os.environ.get("DB_ENVIRONMENT", "development")
 
 def get_connection():
     """Create a database connection with the appropriate schema"""
-    conn = psycopg2.connect(DATABASE_URL)
+    database_url = os.environ.get("DATABASE_URL")
     
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set")
+    
+    conn = psycopg2.connect(database_url)
     # Set the search path to the appropriate schema
     with conn.cursor() as cursor:
         # Create schema if it doesn't exist
@@ -38,26 +48,49 @@ def initialize_database():
         )
         """)
         
-        # Create hype_scores table for historical tracking
+        # Create hype_scores table with improved time-series capabilities
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS hype_scores (
             id SERIAL PRIMARY KEY,
             entity_id INTEGER REFERENCES entities(id),
             score FLOAT NOT NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            time_period TEXT,
             algorithm_version TEXT
         )
         """)
         
-        # Create metrics table for individual data points
+        # Create component_metrics table for tracking individual metrics over time
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS metrics (
+        CREATE TABLE IF NOT EXISTS component_metrics (
             id SERIAL PRIMARY KEY,
             entity_id INTEGER REFERENCES entities(id),
             metric_type TEXT NOT NULL,
             value FLOAT NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            time_period TEXT
         )
+        """)
+        
+        # Create indexes for faster time-based queries
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_hype_scores_timestamp 
+        ON hype_scores(timestamp)
+        """)
+        
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_hype_scores_entity_timestamp 
+        ON hype_scores(entity_id, timestamp)
+        """)
+        
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_component_metrics_timestamp 
+        ON component_metrics(timestamp)
+        """)
+        
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_component_metrics_entity_timestamp 
+        ON component_metrics(entity_id, timestamp)
         """)
     
     conn.commit()

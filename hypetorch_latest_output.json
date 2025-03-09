@@ -1,0 +1,14 @@
+{
+    "hype_scores": {
+        "Test Entity 1": 85.5,
+        "Test Entity 2": 92.1
+    },
+    "mention_counts": {
+        "Test Entity 1": 120,
+        "Test Entity 2": 150
+    },
+    "talk_time_counts": {
+        "Test Entity 1": 5.2,
+        "Test Entity 2": 7.8
+    }
+}
