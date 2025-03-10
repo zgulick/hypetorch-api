@@ -108,7 +108,6 @@ def store_hype_data(data, time_period):
                     (entity_id, "rodmn_score", rodmn_score, timestamp, time_period)
                 )
 
-
             # Store component metrics
             for metric_type, metric_dict in {
                 "talk_time_counts": data.get("talk_time_counts", {}),
