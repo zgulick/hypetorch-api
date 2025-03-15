@@ -76,41 +76,63 @@ def get_entities():
 @app.get("/api/entities/{entity_id}")
 def get_entity_details(entity_id: str):
     """Returns detailed hype data for a specific entity."""
-    data = load_data()
-    entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
-    
-    # Case-sensitive direct lookup
-    if entity_name in data.get("hype_scores", {}):
-        return {
-            "name": entity_name,
-            "hype_score": data.get("hype_scores", {}).get(entity_name, "N/A"),
-            "rodmn_score": data.get("rodmn_scores", {}).get(entity_name, "N/A"),  # This is the new line
-            "mentions": data.get("mention_counts", {}).get(entity_name, 0),
-            "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
-            "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
-        }
-    
-    # Case-insensitive lookup (fallback)
-    for key in data.get("hype_scores", {}):
-        if key.lower() == entity_name.lower():
+    try:
+        data = load_data()
+        if not data:
+            raise HTTPException(status_code=500, detail="Failed to load entity data")
+            
+        entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+        
+        # Case-sensitive direct lookup
+        if entity_name in data.get("hype_scores", {}):
             return {
-                "name": key,  # Return the original case
-                "hype_score": data.get("hype_scores", {}).get(key, "N/A"),
-                "rodmn_score": data.get("rodmn_scores", {}).get(key, "N/A"),  # This is the new line
-                "mentions": data.get("mention_counts", {}).get(key, 0),
-                "talk_time": data.get("talk_time_counts", {}).get(key, 0),
-                "sentiment": data.get("player_sentiment_scores", {}).get(key, [])
+                "name": entity_name,
+                "hype_score": data.get("hype_scores", {}).get(entity_name, "N/A"),
+                "rodmn_score": data.get("rodmn_scores", {}).get(entity_name, "N/A"),
+                "mentions": data.get("mention_counts", {}).get(entity_name, 0),
+                "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
+                "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
             }
-    # If we get here, the entity wasn't found with either method
-    raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
-
+        
+        # Case-insensitive lookup (fallback)
+        for key in data.get("hype_scores", {}):
+            if key.lower() == entity_name.lower():
+                return {
+                    "name": key,  # Return the original case
+                    "hype_score": data.get("hype_scores", {}).get(key, "N/A"),
+                    "rodmn_score": data.get("rodmn_scores", {}).get(key, "N/A"),
+                    "mentions": data.get("mention_counts", {}).get(key, 0),
+                    "talk_time": data.get("talk_time_counts", {}).get(key, 0),
+                    "sentiment": data.get("player_sentiment_scores", {}).get(key, [])
+                }
+                
+        # If we get here, the entity wasn't found with either method
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
+        
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        print(f"Error processing entity request for {entity_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error processing entity data: {str(e)}")
+    
 @app.get("/api/hype_scores")
 def get_hype_scores():
     """Returns all hype scores from the JSON file."""
-    data = load_data()
-    if "hype_scores" not in data:
-        raise HTTPException(status_code=500, detail="❌ ERROR: 'hype_scores' field missing in data.")
-    return data["hype_scores"]
+    try:
+        data = load_data()
+        
+        if not data:
+            raise HTTPException(status_code=500, detail="Failed to load data")
+            
+        if "hype_scores" not in data:
+            raise HTTPException(status_code=500, detail="❌ ERROR: 'hype_scores' field missing in data.")
+            
+        return data["hype_scores"]
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        print(f"Error retrieving hype scores: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error retrieving hype scores: {str(e)}")
 
 @app.get("/api/rodmn_scores")
 def get_rodmn_scores():
@@ -141,26 +163,33 @@ def get_controversial_entities(limit: int = 10):
 @app.get("/api/entities/{entity_id}/metrics")
 def get_entity_metrics(entity_id: str):
     """Returns engagement metrics for a specific entity."""
-    data = load_data()
-    entity_name = entity_id.replace("_", " ")
+    try:
+        data = load_data()
+        if not data:
+            raise HTTPException(status_code=500, detail="Failed to load data")
+            
+        entity_name = entity_id.replace("_", " ")
+        
+        # Create case-insensitive maps of all the data dictionaries
+        mention_counts_lower = {k.lower(): v for k, v in data.get("mention_counts", {}).items()}
+        talk_time_lower = {k.lower(): v for k, v in data.get("talk_time_counts", {}).items()}
+        sentiment_lower = {k.lower(): v for k, v in data.get("player_sentiment_scores", {}).items()}
+        rodmn_lower = {k.lower(): v for k, v in data.get("rodmn_scores", {}).items()}
+        
+        # Use lowercase key for all lookups
+        entity_lower = entity_name.lower()
+        
+        # Look up all metrics using case-insensitive keys
+        return {
+            "mentions": mention_counts_lower.get(entity_lower, 0),
+            "talk_time": talk_time_lower.get(entity_lower, 0),
+            "sentiment": sentiment_lower.get(entity_lower, []),
+            "rodmn_score": rodmn_lower.get(entity_lower, 0)
+        }
+    except Exception as e:
+        print(f"Error retrieving metrics for entity {entity_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error retrieving entity metrics: {str(e)}")
     
-    # Create case-insensitive maps of all the data dictionaries
-    mention_counts_lower = {k.lower(): v for k, v in data.get("mention_counts", {}).items()}
-    talk_time_lower = {k.lower(): v for k, v in data.get("talk_time_counts", {}).items()}
-    sentiment_lower = {k.lower(): v for k, v in data.get("player_sentiment_scores", {}).items()}
-    rodmn_lower = {k.lower(): v for k, v in data.get("rodmn_scores", {}).items()}
-    
-    # Use lowercase key for all lookups
-    entity_lower = entity_name.lower()
-    
-    # Look up all metrics using case-insensitive keys
-    return {
-        "mentions": mention_counts_lower.get(entity_lower, 0),
-        "talk_time": talk_time_lower.get(entity_lower, 0),
-        "sentiment": sentiment_lower.get(entity_lower, []),
-        "rodmn_score": rodmn_lower.get(entity_lower, 0)
-    }
-
 @app.get("/api/entities/{entity_id}/trending")
 def get_entity_trending(entity_id: str):
     """Returns trending data for a specific entity."""
