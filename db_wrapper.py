@@ -7,6 +7,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 from db_utils import with_retry, with_connection, transactional
+import threading
+from contextlib import contextmanager
 
 # Flag to track if database functionality is available
 DB_AVAILABLE = False
@@ -24,6 +26,77 @@ except ImportError:
         DB_AVAILABLE = "SQLITE"
     except ImportError:
         print("⚠️ WARNING: Neither PostgreSQL nor SQLite available - running in file-only mode")
+
+class ConnectionPool:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(ConnectionPool, cls).__new__(cls)
+                cls._instance.pool = []
+                cls._instance.max_pool_size = 10
+        return cls._instance
+
+    def get_connection(self):
+        """Get a connection from the pool or create a new one"""
+        with self._lock:
+            if self.pool:
+                return self.pool.pop()
+            else:
+                # Create a new connection
+                if DB_AVAILABLE == True:  # PostgreSQL
+                    return get_pg_connection()
+                elif DB_AVAILABLE == "SQLITE":  # SQLite
+                    return get_sqlite_connection()
+                else:
+                    raise Exception("No database available")
+
+    def return_connection(self, conn):
+        """Return a connection to the pool"""
+        with self._lock:
+            if len(self.pool) < self.max_pool_size:
+                self.pool.append(conn)
+            else:
+                conn.close()
+
+# Create a singleton instance
+connection_pool = ConnectionPool()
+
+@contextmanager
+def get_connection_from_pool():
+    """Context manager for getting and returning a connection"""
+    conn = None
+    try:
+        conn = connection_pool.get_connection()
+        yield conn
+    finally:
+        if conn:
+            connection_pool.return_connection(conn)
+
+def execute_pooled_query(query, params=None, fetch=True):
+    """Execute a database query using the connection pool"""
+    with get_connection_from_pool() as conn:
+        try:
+            if DB_AVAILABLE == True:  # PostgreSQL
+                cursor = conn.cursor()
+            else:  # SQLite
+                cursor = conn.cursor()
+                
+            cursor.execute(query, params or ())
+            
+            if fetch:
+                result = cursor.fetchall()
+            else:
+                result = None
+                
+            conn.commit()
+            return result
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ Database query error: {e}")
+            raise
 
 # Base directory for SQLite
 BASE_DIR = Path("/opt/render/project/src") if os.path.exists("/opt/render/project") else Path(".")
@@ -79,7 +152,7 @@ def init_sqlite_db():
 def get_pg_connection():
     """Create a database connection with the appropriate schema"""
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         
         # Set the search path to the appropriate schema
         with conn.cursor() as cursor:

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import time
 
 # Import our new database functions
-from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column
+from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column, execute_pooled_query
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
 from typing import Optional
 from fastapi import Query
@@ -314,14 +314,50 @@ def debug_database():
         "render_directory_exists": os.path.exists("/opt/render/project/src")
     }
 
-@app.get("/api/health")
+@app.get("/api/health-check")
 def health_check():
-    """Health check endpoint"""
-    return {
+    """Comprehensive health check endpoint for the API and database"""
+    health_info = {
         "status": "healthy",
         "timestamp": time.time(),
-        "database": DB_AVAILABLE
+        "database": {
+            "type": "PostgreSQL" if DB_AVAILABLE == True else 
+                    "SQLite" if DB_AVAILABLE == "SQLITE" else "None",
+            "connection": "unknown"
+        },
+        "api_version": "1.0.0"
     }
+    
+    # Test database connection
+    try:
+        if DB_AVAILABLE == True or DB_AVAILABLE == "SQLITE":
+            # Use our new pooled query function
+            start_time = time.time()
+            execute_pooled_query("SELECT 1")
+            query_time = time.time() - start_time
+            
+            health_info["database"]["connection"] = "connected"
+            health_info["database"]["query_time_ms"] = round(query_time * 1000, 2)
+        else:
+            health_info["database"]["connection"] = "disabled"
+    except Exception as e:
+        health_info["status"] = "unhealthy"
+        health_info["database"]["connection"] = "error"
+        health_info["database"]["error"] = str(e)
+    
+    # Add memory usage if available
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+        health_info["memory"] = {
+            "rss_mb": round(memory_info.rss / (1024 * 1024), 2)
+        }
+    except ImportError:
+        # psutil not available, skip memory info
+        pass
+    
+    return health_info
 
 # Load Data on API Startup to Confirm Access
 print("\n🚀 DEBUG: Testing Data Load at Startup...")
