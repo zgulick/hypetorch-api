@@ -40,19 +40,75 @@
             {"name": "Unrivaled", "type": "non-person", "gender": "neutral", "aliases": [], "related_entities": [], "is_group": true}
         ],
         "NBA": [
-            {"name": "LeBron James", "type": "person", "gender": "male", "aliases": ["James", "LeBron", "King James", "The King"], "related_entities": ["NBA"]},
-            {"name": "Stephen Curry", "type": "person", "gender": "male", "aliases": ["Curry", "Stephen", "Steph", "Chef Curry"], "related_entities": ["NBA"]},
-            {"name": "NBA", "type": "non-person", "gender": "neutral", "aliases": ["National Basketball Association", "N.B.A."], "related_entities": [], "is_group": true}
+            {
+                "name": "LeBron James",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "NBA"
+                ]
+            },
+            {
+                "name": "Stephen Curry",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "NBA"
+                ]
+            },
+            {
+                "name": "NBA",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "NBA"
+                ]
+            }
         ]
     },
     "Crypto": {
         "Altcoins": [
-            {"name": "Ethereum", "type": "non-person", "gender": "neutral", "aliases": ["ETH", "Ether"], "related_entities": []},
-            {"name": "Solana", "type": "non-person", "gender": "neutral", "aliases": ["SOL"], "related_entities": []},
-            {"name": "Dogecoin", "type": "non-person", "gender": "neutral", "aliases": ["DOGE", "Doge"], "related_entities": []}
+            {
+                "name": "Ethereum",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Altcoins"
+                ]
+            },
+            {
+                "name": "Solana",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Altcoins"
+                ]
+            },
+            {
+                "name": "Dogecoin",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Altcoins"
+                ]
+            }
         ],
         "Bitcoin": [
-            {"name": "Bitcoin", "type": "non-person", "gender": "neutral", "aliases": ["BTC"], "related_entities": []}
+            {
+                "name": "Bitcoin",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Bitcoin"
+                ]
+            }
         ]
     }
 }
