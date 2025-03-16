@@ -142,7 +142,7 @@ def get_entity_details(entity_id: str):
         # Ensure connection is closed
         if 'conn' in locals():
             conn.close()
-            
+
 @app.put("/api/entities/{entity_id}")
 async def update_entity_endpoint(entity_id: str, entity_data: dict):
     """Updates details for a specific entity."""
@@ -394,6 +394,19 @@ def get_trending_entities_endpoint(
     """Returns trending entities based on recent changes in metrics."""
     trending = get_trending_entities(metric, limit, time_period, category, subcategory)
     return {"trending": trending}
+
+@app.get("/api/update_entities_json")
+def update_entities_json():
+    """Trigger a manual update of the entities.json file from the database."""
+    try:
+        from db_wrapper import export_entities_to_json
+        success = export_entities_to_json()
+        return {
+            "success": success,
+            "message": "Entities JSON updated successfully" if success else "Failed to update entities JSON"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating entities JSON: {str(e)}")
 
 @app.post("/api/upload_json")
 def upload_json(file: UploadFile = File(...)):
