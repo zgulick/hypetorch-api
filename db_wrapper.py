@@ -991,7 +991,7 @@ def import_entities_to_database():
     except Exception as e:
         print(f"❌ Error importing entities: {e}")
         return False
-
+    
 def export_entities_to_json():
     """Export all entities from database to entities.json file"""
     try:
@@ -1031,10 +1031,10 @@ def export_entities_to_json():
                 # Add to appropriate list
                 entities_data[category][subcategory].append(entity_obj)
             
-            # Path to entities.json
+            # Path to entities.json in the API directory
             entities_json_path = BASE_DIR / "entities.json"
             
-            # Save to entities.json
+            # Save to entities.json in API directory
             with open(entities_json_path, 'w') as f:
                 json.dump(entities_data, f, indent=4)
                 
@@ -1049,6 +1049,6 @@ def export_entities_to_json():
     except Exception as e:
         print(f"❌ Error exporting entities: {e}")
         return False
-
+    
 # Initialize database on module import
 initialize_database()
