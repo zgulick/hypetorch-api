@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 import time
-
+import traceback
 # Import our new database functions
 from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column, execute_pooled_query, update_entity, create_entity, delete_entity, import_entities_to_database
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
@@ -119,35 +119,69 @@ def get_entity_details(entity_id: str):
 async def update_entity_endpoint(entity_id: str, entity_data: dict):
     """Updates details for a specific entity."""
     try:
-        entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+        # Convert underscores to spaces in entity name
+        entity_name = entity_id.replace("_", " ")
+        
+        # Validate input data
+        if not entity_data:
+            raise HTTPException(status_code=400, detail="No update data provided")
+        
+        # Ensure data contains all necessary fields with defaults
+        update_data = {
+            "name": entity_data.get("name", entity_name),
+            "type": entity_data.get("type", "person"),
+            "category": entity_data.get("category", "Sports"),
+            "subcategory": entity_data.get("subcategory", "Unrivaled")
+        }
         
         # Call the database function to update the entity
-        success, message = update_entity(entity_name, entity_data)
+        success, message = update_entity(entity_name, update_data)
         
         if not success:
             raise HTTPException(status_code=400, detail=message)
             
         return {"success": True, "message": message}
+    
     except Exception as e:
+        # Log the full error for debugging
+        print(f"❌ Full error updating entity: {traceback.format_exc()}")
+        
+        # Specific error handling
+        if "violates foreign key constraint" in str(e):
+            raise HTTPException(
+                status_code=409, 
+                detail="Cannot update entity due to existing data references."
+            )
+        
+        # Generic error handling
         raise HTTPException(status_code=500, detail=f"Error updating entity: {str(e)}")
 
 @app.post("/api/entities")
 async def create_entity_endpoint(entity_data: dict):
     """Creates a new entity."""
     try:
-        # Extract entity name from the data
-        entity_name = entity_data.get("name")
-        if not entity_name:
+        # Validate required fields
+        if not entity_data.get("name"):
             raise HTTPException(status_code=400, detail="Entity name is required")
-            
+        
+        # Ensure data contains all necessary fields with defaults
+        new_entity_data = {
+            "name": entity_data.get("name"),
+            "type": entity_data.get("type", "person"),
+            "category": entity_data.get("category", "Sports"),
+            "subcategory": entity_data.get("subcategory", "Unrivaled")
+        }
+        
         # Call the database function to create the entity
-        success, message = create_entity(entity_data)
+        success, message = create_entity(new_entity_data)
         
         if not success:
             raise HTTPException(status_code=400, detail=message)
             
         return {"success": True, "message": message}
+    
     except Exception as e:
+        print(f"❌ Error creating entity: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error creating entity: {str(e)}")
 
 @app.get("/api/hype_scores")
@@ -427,7 +461,8 @@ def health_check():
 async def delete_entity_endpoint(entity_id: str):
     """Deletes a specific entity."""
     try:
-        entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+        # Convert underscores to spaces in entity name
+        entity_name = entity_id.replace("_", " ")
         
         # Call the database function to delete the entity
         success, message = delete_entity(entity_name)
@@ -436,9 +471,11 @@ async def delete_entity_endpoint(entity_id: str):
             raise HTTPException(status_code=400, detail=message)
             
         return {"success": True, "message": message}
+    
     except Exception as e:
+        print(f"❌ Error deleting entity: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error deleting entity: {str(e)}")
-
+    
 # Import entities from JSON to database on startup
 print("\n🔄 Importing entities from JSON to database...")
 from db_wrapper import import_entities_to_database

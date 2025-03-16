@@ -679,255 +679,216 @@ def save_entity_history_sqlite(cursor, data, timestamp):
 
 @with_retry(max_retries=3)
 def update_entity(entity_name, entity_data):
-    """Update entity details in the database"""
+    """
+    Comprehensively update an entity across all systems.
+    
+    Args:
+        entity_name (str): Current name of the entity
+        entity_data (dict): Updated entity information
+    
+    Returns:
+        tuple: (success_boolean, message_string)
+    """
     try:
-        # Check if the name is being changed
-        new_name = entity_data.get("name")
-        name_changed = new_name and new_name != entity_name
+        # Validate input
+        if not entity_name or not entity_data:
+            return False, "Invalid input: Entity name and data are required"
+        
+        # Standardize input data
+        new_name = entity_data.get("name", entity_name).strip()
+        new_type = entity_data.get("type", "person").lower()
+        new_category = entity_data.get("category", "Sports").strip()
+        new_subcategory = entity_data.get("subcategory", "Unrivaled").strip()
+        
+        # Validate name
+        if not new_name:
+            return False, "Entity name cannot be empty"
+        
+        # Validate type
+        if new_type not in ["person", "non-person"]:
+            return False, "Invalid entity type. Must be 'person' or 'non-person'"
         
         if DB_AVAILABLE == True:  # PostgreSQL
             conn = get_pg_connection()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
-                
-            cursor = conn.cursor()
             
-            if name_changed:
-                # For name changes, we need to create a new entity and delete the old one
-                # First, check if the new name already exists
-                cursor.execute("SELECT id FROM entities WHERE name = %s", (new_name,))
-                if cursor.fetchone():
-                    conn.close()
-                    return False, f"Entity '{new_name}' already exists"
+            try:
+                cursor = conn.cursor()
                 
-                # Insert new entity with new name
-                cursor.execute(
-                    """
-                    INSERT INTO entities (name, type, category, subcategory)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (new_name, entity_data.get("type"), entity_data.get("category"), 
-                     entity_data.get("subcategory"))
-                )
+                # Start a transaction
+                cursor.execute("BEGIN")
                 
-                # Delete old entity
-                cursor.execute("DELETE FROM entities WHERE name = %s", (entity_name,))
-            else:
-                # Just update existing entity properties
-                cursor.execute(
-                    """
+                # Update related tables
+                tables_to_update = [
+                    "entity_history",
+                    # Add other tables with entity references if needed
+                ]
+                
+                for table in tables_to_update:
+                    cursor.execute(f"""
+                        UPDATE {table} 
+                        SET entity_name = %s 
+                        WHERE entity_name = %s
+                    """, (new_name, entity_name))
+                
+                # Update entities table
+                cursor.execute("""
                     UPDATE entities 
-                    SET type = %s, category = %s, subcategory = %s
+                    SET 
+                        name = %s, 
+                        type = %s, 
+                        category = %s, 
+                        subcategory = %s,
+                        created_at = CURRENT_TIMESTAMP
                     WHERE name = %s
-                    """,
-                    (entity_data.get("type"), entity_data.get("category"), 
-                     entity_data.get("subcategory"), entity_name)
-                )
-            
-            rows_affected = cursor.rowcount
-            conn.commit()
-            conn.close()
-            
-            # Update entities.json file
-            try:
-                # Path to entities.json
-                entities_json_path = BASE_DIR / "entities.json"
+                """, (new_name, new_type, new_category, new_subcategory, entity_name))
                 
-                if os.path.exists(entities_json_path):
-                    # Load current entities
-                    with open(entities_json_path, 'r') as f:
-                        entities_data = json.load(f)
-                    
-                    # Find and update the entity
-                    category = entity_data.get("category")
-                    subcategory = entity_data.get("subcategory")
-                    
-                    entity_found = False
-                    if category in entities_data and subcategory in entities_data[category]:
-                        for i, entity_obj in enumerate(entities_data[category][subcategory]):
-                            if entity_obj.get("name") == entity_name:
-                                # Found the entity to update
-                                if name_changed:
-                                    # Change the name
-                                    entities_data[category][subcategory][i]["name"] = new_name
-                                    print(f"✅ Renamed entity from {entity_name} to {new_name} in entities.json")
-                                
-                                # Update other properties
-                                entities_data[category][subcategory][i]["type"] = entity_data.get("type")
-                                entity_found = True
-                                print(f"✅ Updated entity properties in entities.json")
-                                break
-                        
-                        if entity_found:
-                            # Save updated entities.json
-                            with open(entities_json_path, 'w') as f:
-                                json.dump(entities_data, f, indent=4)
-                                print(f"✅ Saved updated entities.json file")
+                # Commit transaction
+                conn.commit()
                 
+                # Reload entities.json to reflect changes
+                export_entities_to_json()
+                
+                return True, f"Entity successfully updated from {entity_name} to {new_name}"
+            
             except Exception as e:
-                print(f"⚠️ Warning: Could not update entities.json: {e}")
-                # Continue anyway - database update was successful
+                # Rollback transaction on any error
+                conn.rollback()
+                print(f"❌ Database update error: {e}")
+                return False, f"Database update failed: {str(e)}"
             
-            export_entities_to_json()
-            return rows_affected > 0, f"Entity {entity_name} {'renamed to ' + new_name if name_changed else 'updated'} successfully"
-                
-        else:
-            # For SQLite or file-only, we'll implement later
-            return False, "Database not available"
-            
-    except Exception as e:
-        print(f"❌ Error updating entity: {e}")
-        return False, f"Error: {str(e)}"
-    
-@with_retry(max_retries=3)
-def create_entity(entity_data):
-    """Create a new entity in the database and entities.json"""
-    try:
-        entity_name = entity_data.get("name")
-        if not entity_name:
-            return False, "Entity name is required"
-            
-        if DB_AVAILABLE == True:  # PostgreSQL
-            conn = get_pg_connection()
-            if not conn:
-                raise Exception("Failed to connect to PostgreSQL database")
-                
-            cursor = conn.cursor()
-            
-            # Check if entity already exists
-            cursor.execute("SELECT id FROM entities WHERE name = %s", (entity_name,))
-            if cursor.fetchone():
+            finally:
                 conn.close()
-                return False, f"Entity '{entity_name}' already exists"
-            
-            # Insert new entity
-            cursor.execute(
-                """
-                INSERT INTO entities (name, type, category, subcategory)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (entity_name, entity_data.get("type"), entity_data.get("category"), 
-                 entity_data.get("subcategory"))
-            )
-            
-            conn.commit()
-            conn.close()
-            
-            # Update entities.json file
-            try:
-                # Path to entities.json
-                entities_json_path = BASE_DIR / "entities.json"
-                
-                if os.path.exists(entities_json_path):
-                    # Load current entities
-                    with open(entities_json_path, 'r') as f:
-                        entities_data = json.load(f)
-                    
-                    # Add entity to the correct category/subcategory
-                    category = entity_data.get("category")
-                    subcategory = entity_data.get("subcategory")
-                    
-                    # Create category/subcategory if they don't exist
-                    if category not in entities_data:
-                        entities_data[category] = {}
-                    
-                    if subcategory not in entities_data[category]:
-                        entities_data[category][subcategory] = []
-                    
-                    # Create new entity object
-                    new_entity = {
-                        "name": entity_name,
-                        "type": entity_data.get("type"),
-                        "gender": "female" if entity_data.get("type") == "person" else "neutral",
-                        "aliases": [],
-                        "related_entities": [subcategory]
-                    }
-                    
-                    # Add to appropriate list
-                    entities_data[category][subcategory].append(new_entity)
-                    
-                    # Save updated entities.json
-                    with open(entities_json_path, 'w') as f:
-                        json.dump(entities_data, f, indent=4)
-                        print(f"✅ Added entity {entity_name} to entities.json")
-                
-            except Exception as e:
-                print(f"⚠️ Warning: Could not update entities.json: {e}")
-            
-            export_entities_to_json()
-            return True, f"Entity '{entity_name}' created successfully"
-                
+        
         else:
-            # For SQLite or file-only, we'll implement later
-            return False, "Database not available"
-            
+            return False, "Database not available for updates"
+    
     except Exception as e:
-        print(f"❌ Error creating entity: {e}")
-        return False, f"Error: {str(e)}"
+        print(f"❌ Comprehensive entity update error: {e}")
+        return False, f"Unexpected error: {str(e)}"
 
-@with_retry(max_retries=3)
+def create_entity(entity_data):
+    """
+    Create a new entity with comprehensive validation and cross-system sync.
+    
+    Args:
+        entity_data (dict): Data for the new entity
+    
+    Returns:
+        tuple: (success_boolean, message_string)
+    """
+    try:
+        # Validate required fields
+        name = entity_data.get("name", "").strip()
+        entity_type = entity_data.get("type", "person").lower()
+        category = entity_data.get("category", "Sports").strip()
+        subcategory = entity_data.get("subcategory", "Unrivaled").strip()
+        
+        # Comprehensive input validation
+        if not name:
+            return False, "Entity name is required"
+        
+        if entity_type not in ["person", "non-person"]:
+            return False, "Invalid entity type. Must be 'person' or 'non-person'"
+        
+        if DB_AVAILABLE == True:  # PostgreSQL
+            conn = get_pg_connection()
+            if not conn:
+                raise Exception("Failed to connect to PostgreSQL database")
+            
+            try:
+                cursor = conn.cursor()
+                
+                # Check if entity already exists
+                cursor.execute("SELECT id FROM entities WHERE name = %s", (name,))
+                if cursor.fetchone():
+                    return False, f"Entity '{name}' already exists"
+                
+                # Insert new entity
+                cursor.execute("""
+                    INSERT INTO entities (name, type, category, subcategory) 
+                    VALUES (%s, %s, %s, %s)
+                """, (name, entity_type, category, subcategory))
+                
+                # Commit transaction
+                conn.commit()
+                
+                # Update entities.json to reflect changes
+                export_entities_to_json()
+                
+                return True, f"Entity '{name}' created successfully"
+            
+            except Exception as e:
+                # Rollback transaction on any error
+                conn.rollback()
+                print(f"❌ Entity creation error: {e}")
+                return False, f"Entity creation failed: {str(e)}"
+            
+            finally:
+                conn.close()
+        
+        else:
+            return False, "Database not available for entity creation"
+    
+    except Exception as e:
+        print(f"❌ Comprehensive entity creation error: {e}")
+        return False, f"Unexpected error: {str(e)}"
+
 def delete_entity(entity_name):
-    """Delete entity from the database and entities.json"""
+    """
+    Delete an entity with comprehensive cross-system sync.
+    
+    Args:
+        entity_name (str): Name of entity to delete
+    
+    Returns:
+        tuple: (success_boolean, message_string)
+    """
     try:
         if DB_AVAILABLE == True:  # PostgreSQL
             conn = get_pg_connection()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
-                
-            cursor = conn.cursor()
             
-            # Delete entity
-            cursor.execute("DELETE FROM entities WHERE name = %s", (entity_name,))
-            rows_deleted = cursor.rowcount
-            
-            conn.commit()
-            conn.close()
-            
-            # Update entities.json file
             try:
-                # Path to entities.json
-                entities_json_path = BASE_DIR / "entities.json"
+                cursor = conn.cursor()
                 
-                if os.path.exists(entities_json_path):
-                    # Load current entities
-                    with open(entities_json_path, 'r') as f:
-                        entities_data = json.load(f)
-                    
-                    # Remove entity from appropriate category/subcategory
-                    entity_found = False
-                    for category in entities_data:
-                        for subcategory in entities_data[category]:
-                            # Filter out the entity to be deleted
-                            original_length = len(entities_data[category][subcategory])
-                            entities_data[category][subcategory] = [
-                                e for e in entities_data[category][subcategory] 
-                                if e.get("name") != entity_name
-                            ]
-                            
-                            # Check if we removed anything
-                            if len(entities_data[category][subcategory]) < original_length:
-                                entity_found = True
-                                print(f"✅ Removed entity {entity_name} from entities.json")
-                    
-                    if entity_found:
-                        # Save updated entities.json
-                        with open(entities_json_path, 'w') as f:
-                            json.dump(entities_data, f, indent=4)
-                            print(f"✅ Saved updated entities.json file")
+                # Delete from related tables first
+                tables_to_clean = [
+                    "entity_history",
+                    # Add other tables with entity references if needed
+                ]
                 
+                for table in tables_to_clean:
+                    cursor.execute(f"DELETE FROM {table} WHERE entity_name = %s", (entity_name,))
+                
+                # Delete from entities table
+                cursor.execute("DELETE FROM entities WHERE name = %s", (entity_name,))
+                
+                # Commit transaction
+                conn.commit()
+                
+                # Update entities.json to reflect changes
+                export_entities_to_json()
+                
+                return True, f"Entity '{entity_name}' deleted successfully"
+            
             except Exception as e:
-                print(f"⚠️ Warning: Could not update entities.json: {e}")
+                # Rollback transaction on any error
+                conn.rollback()
+                print(f"❌ Entity deletion error: {e}")
+                return False, f"Entity deletion failed: {str(e)}"
             
-            export_entities_to_json()
-            return rows_deleted > 0, f"Entity '{entity_name}' deleted successfully"
-                
+            finally:
+                conn.close()
+        
         else:
-            # For SQLite or file-only, we'll implement later
-            return False, "Database not available"
-            
+            return False, "Database not available for entity deletion"
+    
     except Exception as e:
-        print(f"❌ Error deleting entity: {e}")
-        return False, f"Error: {str(e)}"
+        print(f"❌ Comprehensive entity deletion error: {e}")
+        return False, f"Unexpected error: {str(e)}"
 
 def import_entities_to_database():
     """Import all entities from entities.json file into the database"""
