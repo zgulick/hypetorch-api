@@ -342,15 +342,6 @@
                 "related_entities": [
                     "Unrivaled"
                 ]
-            },
-            {
-                "name": "TestEntity",
-                "type": "person",
-                "gender": "female",
-                "aliases": [],
-                "related_entities": [
-                    "Unrivaled"
-                ]
             }
         ],
         "NBA": [
