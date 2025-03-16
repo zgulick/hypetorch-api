@@ -78,31 +78,41 @@ def get_entities():
 
 @app.get("/api/entities/{entity_id}")
 def get_entity_details(entity_id: str):
-    """Returns detailed hype data for a specific entity."""
     try:
-        # First, try to get entity details directly from the database
+        print(f"🔍 Fetching details for: {entity_id}")
+        
+        # Connect directly to database
         conn = get_pg_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         
         entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
         
-        # Fetch entity details from database
+        # Fetch ALL entities with similar names
         cursor.execute("""
-            SELECT name, type, category, subcategory 
+            SELECT id, name, type, category, subcategory 
             FROM entities 
-            WHERE name ILIKE %s
-        """, (entity_name,))
+            WHERE name ILIKE %s OR name ILIKE %s
+        """, (entity_name, f"%{entity_name}%"))
         
-        entity_details = cursor.fetchone()
+        all_matching_entities = cursor.fetchall()
         
-        if not entity_details:
+        print("🔍 All Matching Entities:")
+        for entity in all_matching_entities:
+            print(f"  ID: {entity['id']}, Name: {entity['name']}")
+        
+        # If no exact match, try case-insensitive partial match
+        if not all_matching_entities:
+            print(f"❌ No exact match found for {entity_name}")
             raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
+        
+        # Choose the first matching entity (assuming no duplicates)
+        entity_details = all_matching_entities[0]
         
         # Load additional data from JSON file
         data = load_data()
         
         # Construct full entity response
-        return {
+        response = {
             "name": entity_details['name'],
             "type": entity_details['type'],
             "category": entity_details['category'],
@@ -114,16 +124,25 @@ def get_entity_details(entity_id: str):
             "sentiment": data.get("player_sentiment_scores", {}).get(entity_details['name'], [])
         }
         
+        print(f"✅ Returning response: {response}")
+        
+        return response
+        
     except Exception as e:
+        print(f"❌ FULL ERROR DETAILS:")
+        import traceback
+        traceback.print_exc()
+        
         if isinstance(e, HTTPException):
             raise e
+        
         print(f"Error processing entity request for {entity_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error processing entity data: {str(e)}")
     finally:
         # Ensure connection is closed
         if 'conn' in locals():
             conn.close()
-
+            
 @app.put("/api/entities/{entity_id}")
 async def update_entity_endpoint(entity_id: str, entity_data: dict):
     """Updates details for a specific entity."""
