@@ -438,7 +438,12 @@ async def delete_entity_endpoint(entity_id: str):
         return {"success": True, "message": message}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting entity: {str(e)}")
-    
+
+# Import entities from JSON to database on startup
+print("\n🔄 Importing entities from JSON to database...")
+from db_wrapper import import_entities_to_database
+import_entities_to_database()
+
 # Load Data on API Startup to Confirm Access
 print("\n🚀 DEBUG: Testing Data Load at Startup...")
 startup_data = load_data()
