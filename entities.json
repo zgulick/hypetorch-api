@@ -365,8 +365,8 @@
             },
             {
                 "name": "NBA",
-                "type": "person",
-                "gender": "female",
+                "type": "non-person",
+                "gender": "neutral",
                 "aliases": [],
                 "related_entities": [
                     "NBA"
