@@ -1,58 +1,419 @@
 {
     "Sports": {
         "Unrivaled": [
-            {"name": "Breanna Stewart", "type": "person", "gender": "female", "aliases": ["Stewart", "Breanna", "Stewie"], "related_entities": ["Unrivaled"]},
-            {"name": "Napheesa Collier", "type": "person", "gender": "female", "aliases": ["Collier", "Napheesa", "Phee"], "related_entities": ["Unrivaled"]},
-            {"name": "Chelsea Gray", "type": "person", "gender": "female", "aliases": ["Gray", "Chelsea", "Point Gawd"], "related_entities": ["Unrivaled"]},
-            {"name": "Arike Ogunbowale", "type": "person", "gender": "female", "aliases": ["Ogunbowale", "Arike"], "related_entities": ["Unrivaled"]},
-            {"name": "Jewell Loyd", "type": "person", "gender": "female", "aliases": ["Loyd", "Jewell", "Gold Mamba"], "related_entities": ["Unrivaled"]},
-            {"name": "Rhyne Howard", "type": "person", "gender": "female", "aliases": ["Howard", "Rhyne"], "related_entities": ["Unrivaled"]},
-            {"name": "Kahleah Copper", "type": "person", "gender": "female", "aliases": ["Copper", "Kahleah", "KC"], "related_entities": ["Unrivaled"]},
-            {"name": "Jackie Young", "type": "person", "gender": "female", "aliases": ["Young", "Jackie"], "related_entities": ["Unrivaled"]},
-            {"name": "Angel Reese", "type": "person", "gender": "female", "aliases": ["Reese", "Angel", "Bayou Barbie"], "related_entities": ["Unrivaled"]},
-            {"name": "Dearica Hamby", "type": "person", "gender": "female", "aliases": ["Hamby", "Dearica"], "related_entities": ["Unrivaled"]},
-            {"name": "Kayla McBride", "type": "person", "gender": "female", "aliases": ["McBride", "Kayla", "KMac"], "related_entities": ["Unrivaled"]},
-            {"name": "Marena Mabry", "type": "person", "gender": "female", "aliases": ["Mabry", "Marena"], "related_entities": ["Unrivaled"]},
-            {"name": "Satou Sabally", "type": "person", "gender": "female", "aliases": ["Sabally", "Satou"], "related_entities": ["Unrivaled"]},
-            {"name": "Allisha Gray", "type": "person", "gender": "female", "aliases": ["Gray", "Allisha"], "related_entities": ["Unrivaled"]},
-            {"name": "Natasha Cloud", "type": "person", "gender": "female", "aliases": ["Cloud", "Natasha", "Tash"], "related_entities": ["Unrivaled"]},
-            {"name": "Skylar Diggins-Smith", "type": "person", "gender": "female", "aliases": ["Diggins-Smith", "Skylar", "Diggins", "Sky"], "related_entities": ["Unrivaled"]},
-            {"name": "Rickea Jackson", "type": "person", "gender": "female", "aliases": ["Jackson", "Rickea"], "related_entities": ["Unrivaled"]},
-            {"name": "Dijonai Carrington", "type": "person", "gender": "female", "aliases": ["Carrington", "Dijonai"], "related_entities": ["Unrivaled"]},
-            {"name": "Courtney Vandersloot", "type": "person", "gender": "female", "aliases": ["Vandersloot", "Courtney", "Sloot"], "related_entities": ["Unrivaled"]},
-            {"name": "Brittney Sykes", "type": "person", "gender": "female", "aliases": ["Sykes", "Brittney", "Slim"], "related_entities": ["Unrivaled"]},
-            {"name": "Shakira Austin", "type": "person", "gender": "female", "aliases": ["Austin", "Shakira", "Kira"], "related_entities": ["Unrivaled"]},
-            {"name": "Tiffany Hayes", "type": "person", "gender": "female", "aliases": ["Hayes", "Tiffany"], "related_entities": ["Unrivaled"]},
-            {"name": "Brittney Griner", "type": "person", "gender": "female", "aliases": ["Griner", "Brittney", "BG"], "related_entities": ["Unrivaled"]},
-            {"name": "Azura Stevens", "type": "person", "gender": "female", "aliases": ["Stevens", "Azura", "Z"], "related_entities": ["Unrivaled"]},
-            {"name": "Courtney Williams", "type": "person", "gender": "female", "aliases": ["Williams", "Courtney", "C-Will"], "related_entities": ["Unrivaled"]},
-            {"name": "Kate Martin", "type": "person", "gender": "female", "aliases": ["Martin", "Kate"], "related_entities": ["Unrivaled"]},
-            {"name": "Aaliyah Edwards", "type": "person", "gender": "female", "aliases": ["Edwards", "Aaliyah"], "related_entities": ["Unrivaled"]},
-            {"name": "Lexie Hull", "type": "person", "gender": "female", "aliases": ["Hull", "Lexie"], "related_entities": ["Unrivaled"]},
-            {"name": "Aliyah Boston", "type": "person", "gender": "female", "aliases": ["Boston", "Aliyah", "AB"], "related_entities": ["Unrivaled"]},
-            {"name": "Alyssa Thomas", "type": "person", "gender": "female", "aliases": ["Thomas", "Alyssa", "AT"], "related_entities": ["Unrivaled"]},
-            {"name": "Stefanie Dolson", "type": "person", "gender": "female", "aliases": ["Dolson", "Stefanie", "Stef", "Big Mama Stef"], "related_entities": ["Unrivaled"]},
-            {"name": "Rae Burrell", "type": "person", "gender": "female", "aliases": ["Burrell", "Rae"], "related_entities": ["Unrivaled"]},
-            {"name": "Jordin Canada", "type": "person", "gender": "female", "aliases": ["Canada", "Jordin"], "related_entities": ["Unrivaled"]},
-            {"name": "Caitlin Clark", "type": "person", "gender": "female", "aliases": ["Clark", "Caitlin", "CC"], "related_entities": ["WNBA"]},
-            {"name": "Katie Lou Samuelson", "type": "person", "gender": "female", "aliases": ["Samuelson", "Katie Lou", "Katie", "Lou"], "related_entities": ["Unrivaled"]},
-            {"name": "Sabrina Ionescu", "type": "person", "gender": "female", "aliases": ["Ionescu", "Sabrina", "Sab"], "related_entities": ["Unrivaled"]},
-            {"name": "Unrivaled", "type": "non-person", "gender": "neutral", "aliases": [], "related_entities": [], "is_group": true}
+            {
+                "name": "Satou Sabally",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Dijonai Carrington",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Caitlin Clark",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Courtney Vandersloot",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Stefanie Dolson",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Rae Burrell",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Napheesa Collier",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Brittney Griner",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Brittney Sykes",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Kayla Mcbride",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Katie Lou Samuelson",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Lexie Hull",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Shakira Austin",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Skylar Diggins-Smith",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Dearica Hamby",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Rickea Jackson",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Allisha Gray",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Chelsea Gray",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Jewell Loyd",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Azura Stevens",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Sabrina Ionescu",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Tiffany Hayes",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Rhyne Howard",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Kate Martin",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Jordin Canada",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Angel Reese",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Alyssa Thomas",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Courtney Williams",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Aaliyah Edwards",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Aliyah Boston",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Natasha Cloud",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Jackie Young",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Breanna Stewart",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Arike Ogunbowale",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Unrivaled",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Kayla McBride",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Marina Mabrey",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            },
+            {
+                "name": "Kahleah Copper",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "Unrivaled"
+                ]
+            }
         ],
         "NBA": [
-            {"name": "LeBron James", "type": "person", "gender": "male", "aliases": ["James", "LeBron", "King James", "The King"], "related_entities": ["NBA"]},
-            {"name": "Stephen Curry", "type": "person", "gender": "male", "aliases": ["Curry", "Stephen", "Steph", "Chef Curry"], "related_entities": ["NBA"]},
-            {"name": "NBA", "type": "non-person", "gender": "neutral", "aliases": ["National Basketball Association", "N.B.A."], "related_entities": [], "is_group": true}
+            {
+                "name": "LeBron James",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "NBA"
+                ]
+            },
+            {
+                "name": "Stephen Curry",
+                "type": "person",
+                "gender": "female",
+                "aliases": [],
+                "related_entities": [
+                    "NBA"
+                ]
+            },
+            {
+                "name": "NBA",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "NBA"
+                ]
+            }
         ]
     },
     "Crypto": {
         "Altcoins": [
-            {"name": "Ethereum", "type": "non-person", "gender": "neutral", "aliases": ["ETH", "Ether"], "related_entities": []},
-            {"name": "Solana", "type": "non-person", "gender": "neutral", "aliases": ["SOL"], "related_entities": []},
-            {"name": "Dogecoin", "type": "non-person", "gender": "neutral", "aliases": ["DOGE", "Doge"], "related_entities": []}
+            {
+                "name": "Ethereum",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Altcoins"
+                ]
+            },
+            {
+                "name": "Solana",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Altcoins"
+                ]
+            },
+            {
+                "name": "Dogecoin",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Altcoins"
+                ]
+            }
         ],
         "Bitcoin": [
-            {"name": "Bitcoin", "type": "non-person", "gender": "neutral", "aliases": ["BTC"], "related_entities": []}
+            {
+                "name": "Bitcoin",
+                "type": "non-person",
+                "gender": "neutral",
+                "aliases": [],
+                "related_entities": [
+                    "Bitcoin"
+                ]
+            }
         ]
     }
 }
