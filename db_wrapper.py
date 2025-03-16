@@ -697,19 +697,26 @@ def update_entity(entity_name, entity_data):
         
         entity_id = entity_id[0]
         
-        # Update ALL tables that reference this entity
-        tables_to_update = [
-            "entity_history",
-            "hype_scores",
-            "component_metrics"
-        ]
+        # Update tables differently based on their schema
+        # entity_history uses entity_name
+        cursor.execute("""
+            UPDATE entity_history 
+            SET entity_name = %s 
+            WHERE entity_name = %s
+        """, (entity_data['name'], entity_name))
         
-        for table in tables_to_update:
-            cursor.execute(f"""
-                UPDATE {table} 
-                SET entity_name = %s 
-                WHERE entity_id = %s
-            """, (entity_data['name'], entity_id))
+        # hype_scores and component_metrics use entity_id
+        cursor.execute("""
+            UPDATE hype_scores 
+            SET entity_id = %s 
+            WHERE entity_id = %s
+        """, (entity_id, entity_id))
+        
+        cursor.execute("""
+            UPDATE component_metrics 
+            SET entity_id = %s 
+            WHERE entity_id = %s
+        """, (entity_id, entity_id))
         
         # Update the main entities table
         cursor.execute("""
@@ -743,7 +750,7 @@ def update_entity(entity_name, entity_data):
         return False, str(e)
     finally:
         conn.close()
-
+        
 def create_entity(entity_data):
     """
     Create a new entity with comprehensive validation and cross-system sync.
