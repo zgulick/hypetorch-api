@@ -965,7 +965,7 @@ def export_entities_to_json():
                 
             cursor = conn.cursor()
             
-            # Get all entities from database
+            # Get all entities from database using the correct schema
             cursor.execute("""
                 SELECT 
                     name, type, category, subcategory
@@ -978,7 +978,7 @@ def export_entities_to_json():
             
             # Group entities by category and subcategory
             for entity in db_entities:
-                name, entity_type, category, subcategory, aliases, related_entities = entity
+                name, entity_type, category, subcategory = entity  # Only unpack 4 values
                 
                 if category not in entities_data:
                     entities_data[category] = {}
@@ -986,32 +986,29 @@ def export_entities_to_json():
                 if subcategory not in entities_data[category]:
                     entities_data[category][subcategory] = []
                 
-                # Create entity object
+                # Create empty lists for missing columns
+                aliases_list = []  # Define this variable explicitly
+                related_entities_list = [subcategory]  # Define this variable explicitly
+                
+                # Create entity object with default values for missing columns
                 entity_obj = {
                     "name": name,
                     "type": entity_type,
                     "gender": "female" if entity_type == "person" else "neutral",
-                    "aliases": aliases or [],
-                    "related_entities": related_entities or [subcategory]
+                    "aliases": aliases_list,  # Use the defined variable
+                    "related_entities": related_entities_list  # Use the defined variable
                 }
                 
                 # Add to appropriate list
                 entities_data[category][subcategory].append(entity_obj)
             
-            # Paths to export
-            export_paths = [
-                BASE_DIR / "entities.json",  # API directory
-                os.path.join(os.path.dirname(__file__), '..', 'hypetorch-scripts', 'entities.json')  # Scripts directory
-            ]
+            # Path to export
+            export_path = BASE_DIR / "entities.json"
             
-            # Save to both locations
-            for path in export_paths:
-                try:
-                    with open(path, 'w') as f:
-                        json.dump(entities_data, f, indent=4)
-                    print(f"✅ Exported entities to {path}")
-                except Exception as e:
-                    print(f"❌ Failed to export to {path}: {e}")
+            # Save to file
+            with open(export_path, 'w') as f:
+                json.dump(entities_data, f, indent=4)
+            print(f"✅ Exported entities to {export_path}")
                 
             conn.close()
             print(f"✅ Exported {len(db_entities)} entities from database to JSON")
