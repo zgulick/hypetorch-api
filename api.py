@@ -59,26 +59,80 @@ app.add_middleware(
 )
 
 def load_data():
-    """Load data through our database operations module"""
-    # Try to load from database first
-    data = load_latest_data()
-    if data and "hype_scores" in data:
-        print("✅ Data loaded successfully from database")
-        return data
-    
-    # Fallback to file
+    """Load data directly from the database instead of JSON file."""
     try:
-        print("⚠️ Trying to load from file as fallback")
-        with open(DATA_FILE, "r") as f:
-            file_data = json.load(f)
-            if file_data and "hype_scores" in file_data:
-                print("✅ Data loaded from file instead")
-                return file_data
+        # Connect to database
+        conn = get_pg_connection()
+        if not conn:
+            raise Exception("Failed to connect to PostgreSQL database")
+            
+        # Get all entities from database
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("SELECT id, name, type, category, subcategory FROM entities")
+        entities = cursor.fetchall()
+        
+        # Create a data structure matching the expected format
+        data = {
+            "hype_scores": {},
+            "mention_counts": {},
+            "talk_time_counts": {},
+            "player_sentiment_scores": {},
+            "rodmn_scores": {}
+        }
+        
+        # Fill with data from entities table
+        for entity in entities:
+            entity_name = entity["name"]
+            data["hype_scores"][entity_name] = 50  # Default score
+            data["mention_counts"][entity_name] = 0
+            data["talk_time_counts"][entity_name] = 0
+            data["player_sentiment_scores"][entity_name] = []
+            data["rodmn_scores"][entity_name] = 5
+        
+        # Get actual metric data if available
+        for entity in entities:
+            entity_id = entity["id"]
+            entity_name = entity["name"]
+            
+            # Get latest hype score
+            cursor.execute(
+                "SELECT score FROM hype_scores WHERE entity_id = %s ORDER BY timestamp DESC LIMIT 1",
+                (entity_id,)
+            )
+            hype_score = cursor.fetchone()
+            if hype_score:
+                data["hype_scores"][entity_name] = hype_score["score"]
+                
+            # Get latest metrics
+            cursor.execute(
+                """
+                SELECT metric_type, value 
+                FROM component_metrics 
+                WHERE entity_id = %s 
+                ORDER BY timestamp DESC
+                """,
+                (entity_id,)
+            )
+            metrics = cursor.fetchall()
+            
+            for metric in metrics:
+                metric_type = metric["metric_type"]
+                value = metric["value"]
+                
+                if metric_type == "mentions":
+                    data["mention_counts"][entity_name] = value
+                elif metric_type == "talk_time_counts":
+                    data["talk_time_counts"][entity_name] = value
+                elif metric_type == "rodmn_score":
+                    data["rodmn_scores"][entity_name] = value
+        
+        conn.close()
+        print("✅ Data loaded directly from database")
+        return data
     except Exception as e:
-        print(f"❌ Error loading from file: {e}")
-    
-    print("❌ WARNING: No valid data found!")
-    return {}
+        print(f"❌ Error loading data from database: {e}")
+        # As fallback, try to use load_latest_data
+        return load_latest_data()
     
 # API Endpoints
 
@@ -99,61 +153,55 @@ def get_entity_details(entity_id: str):
         
         entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
         
-        # Fetch ALL entities with similar names
+        # Fetch entity with exact and case-insensitive match
         cursor.execute("""
             SELECT id, name, type, category, subcategory 
             FROM entities 
-            WHERE name ILIKE %s OR name ILIKE %s
-        """, (entity_name, f"%{entity_name}%"))
+            WHERE LOWER(name) = LOWER(%s)
+        """, (entity_name,))
         
-        all_matching_entities = cursor.fetchall()
+        entity_details = cursor.fetchone()
         
-        print("🔍 All Matching Entities:")
-        for entity in all_matching_entities:
-            print(f"  ID: {entity['id']}, Name: {entity['name']}")
+        # If not found, try fuzzy search
+        if not entity_details:
+            cursor.execute("""
+                SELECT id, name, type, category, subcategory 
+                FROM entities 
+                WHERE name ILIKE %s
+                LIMIT 1
+            """, (f"%{entity_name}%",))
+            entity_details = cursor.fetchone()
         
-        # If no exact match, try case-insensitive partial match
-        if not all_matching_entities:
-            print(f"❌ No exact match found for {entity_name}")
+        if not entity_details:
+            print(f"❌ No entity found for {entity_name}")
             raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
         
-        # Choose the first matching entity (assuming no duplicates)
-        entity_details = all_matching_entities[0]
-        
-        # Load additional data from JSON file
+        # Load all entity data from database
         data = load_data()
         
-        # Construct full entity response
+        # Use entity name from database for lookups
+        correct_name = entity_details['name']
+        
+        # Construct response
         response = {
-            "name": entity_details['name'],
+            "name": correct_name,
             "type": entity_details['type'],
             "category": entity_details['category'],
             "subcategory": entity_details['subcategory'],
-            "hype_score": data.get("hype_scores", {}).get(entity_details['name'], "N/A"),
-            "rodmn_score": data.get("rodmn_scores", {}).get(entity_details['name'], "N/A"),
-            "mentions": data.get("mention_counts", {}).get(entity_details['name'], 0),
-            "talk_time": data.get("talk_time_counts", {}).get(entity_details['name'], 0),
-            "sentiment": data.get("player_sentiment_scores", {}).get(entity_details['name'], [])
+            "hype_score": data.get("hype_scores", {}).get(correct_name, 0),
+            "rodmn_score": data.get("rodmn_scores", {}).get(correct_name, 0),
+            "mentions": data.get("mention_counts", {}).get(correct_name, 0),
+            "talk_time": data.get("talk_time_counts", {}).get(correct_name, 0),
+            "sentiment": data.get("player_sentiment_scores", {}).get(correct_name, [])
         }
         
-        print(f"✅ Returning response: {response}")
-        
+        conn.close()
         return response
-        
     except Exception as e:
-        print(f"❌ FULL ERROR DETAILS:")
-        import traceback
-        traceback.print_exc()
-        
         if isinstance(e, HTTPException):
             raise e
-        
         print(f"Error processing entity request for {entity_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error processing entity data: {str(e)}")
-    finally:
-        # Ensure connection is closed
-        if 'conn' in locals():
-            conn.close()
 
 @app.put("/api/entities/{entity_id}")
 async def update_entity_endpoint(entity_id: str, entity_data: dict):
