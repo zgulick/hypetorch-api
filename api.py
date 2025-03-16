@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import time
 
 # Import our new database functions
-from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column, execute_pooled_query
+from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column, execute_pooled_query, update_entity, create_entity, delete_entity
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
 from typing import Optional
 from fastapi import Query
@@ -114,7 +114,42 @@ def get_entity_details(entity_id: str):
             raise e
         print(f"Error processing entity request for {entity_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error processing entity data: {str(e)}")
-    
+
+@app.put("/api/entities/{entity_id}")
+async def update_entity_endpoint(entity_id: str, entity_data: dict):
+    """Updates details for a specific entity."""
+    try:
+        entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+        
+        # Call the database function to update the entity
+        success, message = update_entity(entity_name, entity_data)
+        
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+            
+        return {"success": True, "message": message}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating entity: {str(e)}")
+
+@app.post("/api/entities")
+async def create_entity_endpoint(entity_data: dict):
+    """Creates a new entity."""
+    try:
+        # Extract entity name from the data
+        entity_name = entity_data.get("name")
+        if not entity_name:
+            raise HTTPException(status_code=400, detail="Entity name is required")
+            
+        # Call the database function to create the entity
+        success, message = create_entity(entity_data)
+        
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+            
+        return {"success": True, "message": message}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating entity: {str(e)}")
+
 @app.get("/api/hype_scores")
 def get_hype_scores():
     """Returns all hype scores from the JSON file."""
@@ -388,6 +423,22 @@ def health_check():
     
     return health_info
 
+@app.delete("/api/entities/{entity_id}")
+async def delete_entity_endpoint(entity_id: str):
+    """Deletes a specific entity."""
+    try:
+        entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+        
+        # Call the database function to delete the entity
+        success, message = delete_entity(entity_name)
+        
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+            
+        return {"success": True, "message": message}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting entity: {str(e)}")
+    
 # Load Data on API Startup to Confirm Access
 print("\n🚀 DEBUG: Testing Data Load at Startup...")
 startup_data = load_data()

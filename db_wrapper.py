@@ -677,5 +677,221 @@ def save_entity_history_sqlite(cursor, data, timestamp):
     
     print(f"✅ Saved history for {successful_inserts}/{len(hype_scores)} entities to SQLite")    
 
+@with_retry(max_retries=3)
+def update_entity(entity_name, entity_data):
+    """Update entity details in the database"""
+    try:
+        if DB_AVAILABLE == True:  # PostgreSQL
+            conn = get_pg_connection()
+            if not conn:
+                raise Exception("Failed to connect to PostgreSQL database")
+                
+            cursor = conn.cursor()
+            
+            # Update entity details
+            cursor.execute(
+                """
+                UPDATE entities 
+                SET type = %s, category = %s, subcategory = %s
+                WHERE name = %s
+                """,
+                (entity_data.get("type"), entity_data.get("category"), 
+                 entity_data.get("subcategory"), entity_name)
+            )
+            
+            rows_updated = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            # Update entities.json file
+            try:
+                # Path to entities.json
+                entities_json_path = BASE_DIR / "entities.json"
+                
+                if os.path.exists(entities_json_path):
+                    # Load current entities
+                    with open(entities_json_path, 'r') as f:
+                        entities_data = json.load(f)
+                    
+                    # Find and update the entity
+                    category = entity_data.get("category")
+                    subcategory = entity_data.get("subcategory")
+                    
+                    if category in entities_data and subcategory in entities_data[category]:
+                        # Find the entity in the list
+                        for i, entity_obj in enumerate(entities_data[category][subcategory]):
+                            if entity_obj.get("name") == entity_name:
+                                # Update entity properties
+                                entities_data[category][subcategory][i]["type"] = entity_data.get("type")
+                                print(f"✅ Updated entity {entity_name} in entities.json")
+                                break
+                        
+                        # Save updated entities.json
+                        with open(entities_json_path, 'w') as f:
+                            json.dump(entities_data, f, indent=4)
+                            print(f"✅ Saved updated entities.json file")
+                
+            except Exception as e:
+                print(f"⚠️ Warning: Could not update entities.json: {e}")
+                # Continue anyway - database update was successful
+            
+            return rows_updated > 0, "Entity updated successfully"
+                
+        else:
+            # For SQLite or file-only, we'll implement later
+            return False, "Database not available"
+            
+    except Exception as e:
+        print(f"❌ Error updating entity: {e}")
+        return False, f"Error: {str(e)}"
+
+@with_retry(max_retries=3)
+def create_entity(entity_data):
+    """Create a new entity in the database and entities.json"""
+    try:
+        entity_name = entity_data.get("name")
+        if not entity_name:
+            return False, "Entity name is required"
+            
+        if DB_AVAILABLE == True:  # PostgreSQL
+            conn = get_pg_connection()
+            if not conn:
+                raise Exception("Failed to connect to PostgreSQL database")
+                
+            cursor = conn.cursor()
+            
+            # Check if entity already exists
+            cursor.execute("SELECT id FROM entities WHERE name = %s", (entity_name,))
+            if cursor.fetchone():
+                conn.close()
+                return False, f"Entity '{entity_name}' already exists"
+            
+            # Insert new entity
+            cursor.execute(
+                """
+                INSERT INTO entities (name, type, category, subcategory)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (entity_name, entity_data.get("type"), entity_data.get("category"), 
+                 entity_data.get("subcategory"))
+            )
+            
+            conn.commit()
+            conn.close()
+            
+            # Update entities.json file
+            try:
+                # Path to entities.json
+                entities_json_path = BASE_DIR / "entities.json"
+                
+                if os.path.exists(entities_json_path):
+                    # Load current entities
+                    with open(entities_json_path, 'r') as f:
+                        entities_data = json.load(f)
+                    
+                    # Add entity to the correct category/subcategory
+                    category = entity_data.get("category")
+                    subcategory = entity_data.get("subcategory")
+                    
+                    # Create category/subcategory if they don't exist
+                    if category not in entities_data:
+                        entities_data[category] = {}
+                    
+                    if subcategory not in entities_data[category]:
+                        entities_data[category][subcategory] = []
+                    
+                    # Create new entity object
+                    new_entity = {
+                        "name": entity_name,
+                        "type": entity_data.get("type"),
+                        "gender": "female" if entity_data.get("type") == "person" else "neutral",
+                        "aliases": [],
+                        "related_entities": [subcategory]
+                    }
+                    
+                    # Add to appropriate list
+                    entities_data[category][subcategory].append(new_entity)
+                    
+                    # Save updated entities.json
+                    with open(entities_json_path, 'w') as f:
+                        json.dump(entities_data, f, indent=4)
+                        print(f"✅ Added entity {entity_name} to entities.json")
+                
+            except Exception as e:
+                print(f"⚠️ Warning: Could not update entities.json: {e}")
+            
+            return True, f"Entity '{entity_name}' created successfully"
+                
+        else:
+            # For SQLite or file-only, we'll implement later
+            return False, "Database not available"
+            
+    except Exception as e:
+        print(f"❌ Error creating entity: {e}")
+        return False, f"Error: {str(e)}"
+
+@with_retry(max_retries=3)
+def delete_entity(entity_name):
+    """Delete entity from the database and entities.json"""
+    try:
+        if DB_AVAILABLE == True:  # PostgreSQL
+            conn = get_pg_connection()
+            if not conn:
+                raise Exception("Failed to connect to PostgreSQL database")
+                
+            cursor = conn.cursor()
+            
+            # Delete entity
+            cursor.execute("DELETE FROM entities WHERE name = %s", (entity_name,))
+            rows_deleted = cursor.rowcount
+            
+            conn.commit()
+            conn.close()
+            
+            # Update entities.json file
+            try:
+                # Path to entities.json
+                entities_json_path = BASE_DIR / "entities.json"
+                
+                if os.path.exists(entities_json_path):
+                    # Load current entities
+                    with open(entities_json_path, 'r') as f:
+                        entities_data = json.load(f)
+                    
+                    # Remove entity from appropriate category/subcategory
+                    entity_found = False
+                    for category in entities_data:
+                        for subcategory in entities_data[category]:
+                            # Filter out the entity to be deleted
+                            original_length = len(entities_data[category][subcategory])
+                            entities_data[category][subcategory] = [
+                                e for e in entities_data[category][subcategory] 
+                                if e.get("name") != entity_name
+                            ]
+                            
+                            # Check if we removed anything
+                            if len(entities_data[category][subcategory]) < original_length:
+                                entity_found = True
+                                print(f"✅ Removed entity {entity_name} from entities.json")
+                    
+                    if entity_found:
+                        # Save updated entities.json
+                        with open(entities_json_path, 'w') as f:
+                            json.dump(entities_data, f, indent=4)
+                            print(f"✅ Saved updated entities.json file")
+                
+            except Exception as e:
+                print(f"⚠️ Warning: Could not update entities.json: {e}")
+            
+            return rows_deleted > 0, f"Entity '{entity_name}' deleted successfully"
+                
+        else:
+            # For SQLite or file-only, we'll implement later
+            return False, "Database not available"
+            
+    except Exception as e:
+        print(f"❌ Error deleting entity: {e}")
+        return False, f"Error: {str(e)}"
+
 # Initialize database on module import
 initialize_database()
