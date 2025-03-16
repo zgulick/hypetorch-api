@@ -934,7 +934,7 @@ def import_entities_to_database():
                         # Insert new entity
                         cursor.execute(
                             """
-                            INSERT INTO entities (name, type, category, subcategory)
+                            INSERT INTO development.entities (name, type, category, subcategory)
                             VALUES (%s, %s, %s, %s)
                             """,
                             (entity_name, entity_type, category, subcategory)
@@ -968,9 +968,8 @@ def export_entities_to_json():
             # Get all entities from database
             cursor.execute("""
                 SELECT 
-                    name, type, category, subcategory, 
-                    aliases, related_entities
-                FROM entities
+                    name, type, category, subcategory
+                FROM development.entities
             """)
             db_entities = cursor.fetchall()
             
