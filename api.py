@@ -5,10 +5,13 @@ from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 import time
 import traceback
+import psycopg2
+from psycopg2 import extras
 # Import our new database functions
 from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column, execute_pooled_query, update_entity, create_entity, delete_entity, import_entities_to_database
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
 from typing import Optional
+from db_wrapper import get_pg_connection
 from fastapi import Query
 from db_historical import (
     store_hype_data, 
@@ -77,43 +80,49 @@ def get_entities():
 def get_entity_details(entity_id: str):
     """Returns detailed hype data for a specific entity."""
     try:
-        data = load_data()
-        if not data:
-            raise HTTPException(status_code=500, detail="Failed to load entity data")
-            
+        # First, try to get entity details directly from the database
+        conn = get_pg_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
         entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
         
-        # Case-sensitive direct lookup
-        if entity_name in data.get("hype_scores", {}):
-            return {
-                "name": entity_name,
-                "hype_score": data.get("hype_scores", {}).get(entity_name, "N/A"),
-                "rodmn_score": data.get("rodmn_scores", {}).get(entity_name, "N/A"),
-                "mentions": data.get("mention_counts", {}).get(entity_name, 0),
-                "talk_time": data.get("talk_time_counts", {}).get(entity_name, 0),
-                "sentiment": data.get("player_sentiment_scores", {}).get(entity_name, [])
-            }
+        # Fetch entity details from database
+        cursor.execute("""
+            SELECT name, type, category, subcategory 
+            FROM entities 
+            WHERE name ILIKE %s
+        """, (entity_name,))
         
-        # Case-insensitive lookup (fallback)
-        for key in data.get("hype_scores", {}):
-            if key.lower() == entity_name.lower():
-                return {
-                    "name": key,  # Return the original case
-                    "hype_score": data.get("hype_scores", {}).get(key, "N/A"),
-                    "rodmn_score": data.get("rodmn_scores", {}).get(key, "N/A"),
-                    "mentions": data.get("mention_counts", {}).get(key, 0),
-                    "talk_time": data.get("talk_time_counts", {}).get(key, 0),
-                    "sentiment": data.get("player_sentiment_scores", {}).get(key, [])
-                }
-                
-        # If we get here, the entity wasn't found with either method
-        raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
+        entity_details = cursor.fetchone()
+        
+        if not entity_details:
+            raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
+        
+        # Load additional data from JSON file
+        data = load_data()
+        
+        # Construct full entity response
+        return {
+            "name": entity_details['name'],
+            "type": entity_details['type'],
+            "category": entity_details['category'],
+            "subcategory": entity_details['subcategory'],
+            "hype_score": data.get("hype_scores", {}).get(entity_details['name'], "N/A"),
+            "rodmn_score": data.get("rodmn_scores", {}).get(entity_details['name'], "N/A"),
+            "mentions": data.get("mention_counts", {}).get(entity_details['name'], 0),
+            "talk_time": data.get("talk_time_counts", {}).get(entity_details['name'], 0),
+            "sentiment": data.get("player_sentiment_scores", {}).get(entity_details['name'], [])
+        }
         
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
         print(f"Error processing entity request for {entity_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error processing entity data: {str(e)}")
+    finally:
+        # Ensure connection is closed
+        if 'conn' in locals():
+            conn.close()
 
 @app.put("/api/entities/{entity_id}")
 async def update_entity_endpoint(entity_id: str, entity_data: dict):
