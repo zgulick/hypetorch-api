@@ -60,12 +60,24 @@ app.add_middleware(
 
 def load_data():
     """Load data through our database operations module"""
+    # Try to load from database first
     data = load_latest_data()
-    if data:
-        print("✅ Data loaded successfully")
+    if data and "hype_scores" in data:
+        print("✅ Data loaded successfully from database")
         return data
     
-    print("❌ WARNING: No data found!")
+    # Fallback to file
+    try:
+        print("⚠️ Trying to load from file as fallback")
+        with open(DATA_FILE, "r") as f:
+            file_data = json.load(f)
+            if file_data and "hype_scores" in file_data:
+                print("✅ Data loaded from file instead")
+                return file_data
+    except Exception as e:
+        print(f"❌ Error loading from file: {e}")
+    
+    print("❌ WARNING: No valid data found!")
     return {}
     
 # API Endpoints
