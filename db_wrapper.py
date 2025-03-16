@@ -9,6 +9,8 @@ from pathlib import Path
 from db_utils import with_retry, with_connection, transactional
 import threading
 from contextlib import contextmanager
+import requests
+import base64
 
 # Flag to track if database functionality is available
 DB_AVAILABLE = False
@@ -1007,8 +1009,13 @@ def export_entities_to_json():
             
             # Save to file
             with open(export_path, 'w') as f:
-                json.dump(entities_data, f, indent=4)
+                json_content = json.dumps(entities_data, indent=4)
+                f.write(json_content)
             print(f"✅ Exported entities to {export_path}")
+            
+            # Push to GitHub
+            push_success = push_to_github(json_content)
+            print(f"GitHub push {'succeeded' if push_success else 'failed'}")
                 
             conn.close()
             print(f"✅ Exported {len(db_entities)} entities from database to JSON")
@@ -1021,6 +1028,79 @@ def export_entities_to_json():
     except Exception as e:
         print(f"❌ Error exporting entities: {e}")
         return False
+
+def push_to_github(file_content):
+    """Push the entities.json file to GitHub repositories."""
+    try:
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            print("❌ GITHUB_TOKEN not found in environment variables")
+            return False
+            
+        # GitHub API headers
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
         
+        # Repositories to update
+        repos = [
+            {"owner": "zgulick", "repo": "hypetorch-scripts", "path": "entities.json"},
+            {"owner": "zgulick", "repo": "hypetorch-api", "path": "entities.json"}
+        ]
+        
+        success = True
+        for repo in repos:
+            # First, get the current file (to get the SHA, which is required for updates)
+            url = f"https://api.github.com/repos/{repo['owner']}/{repo['repo']}/contents/{repo['path']}"
+            
+            try:
+                response = requests.get(url, headers=headers)
+                if response.status_code == 200:
+                    # File exists, get its SHA
+                    sha = response.json()["sha"]
+                    
+                    # Update the file
+                    payload = {
+                        "message": "Update entities.json via API",
+                        "content": base64.b64encode(file_content.encode()).decode(),
+                        "sha": sha
+                    }
+                    
+                    update_response = requests.put(url, headers=headers, json=payload)
+                    if update_response.status_code not in [200, 201]:
+                        print(f"❌ Failed to update {repo['path']} in {repo['repo']}: {update_response.json()}")
+                        success = False
+                    else:
+                        print(f"✅ Updated {repo['path']} in {repo['repo']}")
+                        
+                elif response.status_code == 404:
+                    # File doesn't exist yet, create it
+                    payload = {
+                        "message": "Create entities.json via API",
+                        "content": base64.b64encode(file_content.encode()).decode()
+                    }
+                    
+                    create_response = requests.put(url, headers=headers, json=payload)
+                    if create_response.status_code not in [200, 201]:
+                        print(f"❌ Failed to create {repo['path']} in {repo['repo']}: {create_response.json()}")
+                        success = False
+                    else:
+                        print(f"✅ Created {repo['path']} in {repo['repo']}")
+                        
+                else:
+                    print(f"❌ Error getting file from {repo['repo']}: {response.json()}")
+                    success = False
+                    
+            except Exception as e:
+                print(f"❌ Error processing {repo['repo']}: {e}")
+                success = False
+                
+        return success
+        
+    except Exception as e:
+        print(f"❌ Error pushing to GitHub: {e}")
+        return False
+
 # Initialize database on module import
 initialize_database()
