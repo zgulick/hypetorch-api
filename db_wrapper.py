@@ -687,12 +687,30 @@ def update_entity(entity_name, entity_data):
         # Start a transaction
         cursor.execute("BEGIN")
         
-        # First, get the ID of the existing entity
+        # Debug: Print current and new names
+        print(f"🔍 Attempting to update:")
+        print(f"  Current Name: {entity_name}")
+        print(f"  New Name: {entity_data['name']}")
+        
+        # First, check if the new name already exists (excluding the current entity)
+        cursor.execute("""
+            SELECT id, name FROM entities 
+            WHERE name = %s AND name != %s
+        """, (entity_data['name'], entity_name))
+        existing_entity = cursor.fetchone()
+        
+        if existing_entity:
+            print(f"❌ Duplicate entity found: {existing_entity}")
+            conn.rollback()
+            return False, f"An entity with the name {entity_data['name']} already exists"
+        
+        # Get the ID of the current entity
         cursor.execute("SELECT id FROM entities WHERE name = %s", (entity_name,))
         entity_id = cursor.fetchone()
         
         if not entity_id:
             conn.rollback()
+            print(f"❌ Original entity not found: {entity_name}")
             return False, f"Entity {entity_name} not found"
         
         entity_id = entity_id[0]
@@ -741,6 +759,7 @@ def update_entity(entity_name, entity_data):
         # Regenerate entities.json
         export_entities_to_json()
         
+        print(f"✅ Successfully updated entity from {entity_name} to {entity_data['name']}")
         return True, "Entity updated successfully across all tables"
     
     except Exception as e:
@@ -750,7 +769,7 @@ def update_entity(entity_name, entity_data):
         return False, str(e)
     finally:
         conn.close()
-        
+
 def create_entity(entity_data):
     """
     Create a new entity with comprehensive validation and cross-system sync.
