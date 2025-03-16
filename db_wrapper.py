@@ -679,94 +679,70 @@ def save_entity_history_sqlite(cursor, data, timestamp):
 
 @with_retry(max_retries=3)
 def update_entity(entity_name, entity_data):
-    """
-    Comprehensively update an entity across all systems.
-    
-    Args:
-        entity_name (str): Current name of the entity
-        entity_data (dict): Updated entity information
-    
-    Returns:
-        tuple: (success_boolean, message_string)
-    """
     try:
-        # Validate input
-        if not entity_name or not entity_data:
-            return False, "Invalid input: Entity name and data are required"
+        # Connect to database
+        conn = get_pg_connection()
+        cursor = conn.cursor()
         
-        # Standardize input data
-        new_name = entity_data.get("name", entity_name).strip()
-        new_type = entity_data.get("type", "person").lower()
-        new_category = entity_data.get("category", "Sports").strip()
-        new_subcategory = entity_data.get("subcategory", "Unrivaled").strip()
+        # Start a transaction
+        cursor.execute("BEGIN")
         
-        # Validate name
-        if not new_name:
-            return False, "Entity name cannot be empty"
+        # First, get the ID of the existing entity
+        cursor.execute("SELECT id FROM entities WHERE name = %s", (entity_name,))
+        entity_id = cursor.fetchone()
         
-        # Validate type
-        if new_type not in ["person", "non-person"]:
-            return False, "Invalid entity type. Must be 'person' or 'non-person'"
+        if not entity_id:
+            conn.rollback()
+            return False, f"Entity {entity_name} not found"
         
-        if DB_AVAILABLE == True:  # PostgreSQL
-            conn = get_pg_connection()
-            if not conn:
-                raise Exception("Failed to connect to PostgreSQL database")
-            
-            try:
-                cursor = conn.cursor()
-                
-                # Start a transaction
-                cursor.execute("BEGIN")
-                
-                # Update related tables
-                tables_to_update = [
-                    "entity_history",
-                    # Add other tables with entity references if needed
-                ]
-                
-                for table in tables_to_update:
-                    cursor.execute(f"""
-                        UPDATE {table} 
-                        SET entity_name = %s 
-                        WHERE entity_name = %s
-                    """, (new_name, entity_name))
-                
-                # Update entities table
-                cursor.execute("""
-                    UPDATE entities 
-                    SET 
-                        name = %s, 
-                        type = %s, 
-                        category = %s, 
-                        subcategory = %s,
-                        created_at = CURRENT_TIMESTAMP
-                    WHERE name = %s
-                """, (new_name, new_type, new_category, new_subcategory, entity_name))
-                
-                # Commit transaction
-                conn.commit()
-                
-                # Reload entities.json to reflect changes
-                export_entities_to_json()
-                
-                return True, f"Entity successfully updated from {entity_name} to {new_name}"
-            
-            except Exception as e:
-                # Rollback transaction on any error
-                conn.rollback()
-                print(f"❌ Database update error: {e}")
-                return False, f"Database update failed: {str(e)}"
-            
-            finally:
-                conn.close()
+        entity_id = entity_id[0]
         
-        else:
-            return False, "Database not available for updates"
+        # Update ALL tables that reference this entity
+        tables_to_update = [
+            "entity_history",
+            "hype_scores",
+            "component_metrics"
+        ]
+        
+        for table in tables_to_update:
+            cursor.execute(f"""
+                UPDATE {table} 
+                SET entity_name = %s 
+                WHERE entity_id = %s
+            """, (entity_data['name'], entity_id))
+        
+        # Update the main entities table
+        cursor.execute("""
+            UPDATE entities 
+            SET 
+                name = %s, 
+                type = %s, 
+                category = %s, 
+                subcategory = %s
+            WHERE id = %s
+        """, (
+            entity_data['name'], 
+            entity_data['type'], 
+            entity_data['category'], 
+            entity_data['subcategory'], 
+            entity_id
+        ))
+        
+        # Commit all changes
+        conn.commit()
+        
+        # Regenerate entities.json
+        export_entities_to_json()
+        
+        return True, "Entity updated successfully across all tables"
     
     except Exception as e:
-        print(f"❌ Comprehensive entity update error: {e}")
-        return False, f"Unexpected error: {str(e)}"
+        # Rollback if anything goes wrong
+        conn.rollback()
+        print(f"Error updating entity: {e}")
+        return False, str(e)
+    finally:
+        conn.close()
 
 def create_entity(entity_data):
     """
@@ -954,7 +930,7 @@ def import_entities_to_database():
         return False
     
 def export_entities_to_json():
-    """Export all entities from database to entities.json file"""
+    """Export all entities from database to entities.json files"""
     try:
         if DB_AVAILABLE == True:  # PostgreSQL
             conn = get_pg_connection()
@@ -964,7 +940,12 @@ def export_entities_to_json():
             cursor = conn.cursor()
             
             # Get all entities from database
-            cursor.execute("SELECT name, type, category, subcategory FROM entities")
+            cursor.execute("""
+                SELECT 
+                    name, type, category, subcategory, 
+                    aliases, related_entities
+                FROM entities
+            """)
             db_entities = cursor.fetchall()
             
             # Create structure for entities.json
@@ -972,7 +953,7 @@ def export_entities_to_json():
             
             # Group entities by category and subcategory
             for entity in db_entities:
-                name, entity_type, category, subcategory = entity
+                name, entity_type, category, subcategory, aliases, related_entities = entity
                 
                 if category not in entities_data:
                     entities_data[category] = {}
@@ -985,19 +966,27 @@ def export_entities_to_json():
                     "name": name,
                     "type": entity_type,
                     "gender": "female" if entity_type == "person" else "neutral",
-                    "aliases": [],
-                    "related_entities": [subcategory]
+                    "aliases": aliases or [],
+                    "related_entities": related_entities or [subcategory]
                 }
                 
                 # Add to appropriate list
                 entities_data[category][subcategory].append(entity_obj)
             
-            # Path to entities.json in the API directory
-            entities_json_path = BASE_DIR / "entities.json"
+            # Paths to export
+            export_paths = [
+                BASE_DIR / "entities.json",  # API directory
+                os.path.join(os.path.dirname(__file__), '..', 'hypetorch-scripts', 'entities.json')  # Scripts directory
+            ]
             
-            # Save to entities.json in API directory
-            with open(entities_json_path, 'w') as f:
-                json.dump(entities_data, f, indent=4)
+            # Save to both locations
+            for path in export_paths:
+                try:
+                    with open(path, 'w') as f:
+                        json.dump(entities_data, f, indent=4)
+                    print(f"✅ Exported entities to {path}")
+                except Exception as e:
+                    print(f"❌ Failed to export to {path}: {e}")
                 
             conn.close()
             print(f"✅ Exported {len(db_entities)} entities from database to JSON")
@@ -1010,6 +999,6 @@ def export_entities_to_json():
     except Exception as e:
         print(f"❌ Error exporting entities: {e}")
         return False
-    
+        
 # Initialize database on module import
 initialize_database()
