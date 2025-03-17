@@ -27,11 +27,13 @@ class ApiKeyResponse(BaseModel):
     api_key: Optional[str] = None
     info: ApiKeyInfo
 
+# Change this function in api_key_routes.py
 def verify_admin(admin_key: str = Query(None)):
     """Simple admin verification using environment variable"""
+    # Get from environment variable
     ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "default-unsafe-secret")
     
-    if admin_key != ADMIN_SECRET:
+    if not admin_key or admin_key != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized access to admin functions")
     return True
 
