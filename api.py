@@ -19,7 +19,9 @@ from db_historical import (
     get_entity_metrics_history,
     get_trending_entities
 )
-
+# Add these new imports
+from auth_middleware import get_api_key, api_key_required
+from api_key_routes import router as api_key_router
 
 # Initialize the database
 try:
@@ -57,6 +59,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register the API key management routes
+app.include_router(api_key_router)
+
+# Set the admin secret from environment variable or use a default for development
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "temporary-dev-secret")
 
 def load_data():
     """Load data directly from the database instead of JSON file."""
@@ -143,7 +151,7 @@ def get_entities():
     return list(data.get("hype_scores", {}).keys())
 
 @app.get("/api/entities/{entity_id}")
-def get_entity_details(entity_id: str):
+def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
     try:
         print(f"🔍 Fetching details for: {entity_id}")
         
@@ -273,7 +281,7 @@ async def create_entity_endpoint(entity_data: dict):
         raise HTTPException(status_code=500, detail=f"Error creating entity: {str(e)}")
 
 @app.get("/api/hype_scores")
-def get_hype_scores():
+def get_hype_scores(key_info: dict = Depends(get_api_key)):
     """Returns all hype scores from the JSON file."""
     try:
         data = load_data()
