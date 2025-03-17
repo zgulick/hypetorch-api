@@ -23,12 +23,6 @@ class ApiKeyInfo(BaseModel):
     created_at: str  # This expects a string
     expires_at: Optional[str] = None
     
-    class Config:
-        # Add this to auto-convert datetime objects
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat()
-        }
-
 class ApiKeyResponse(BaseModel):
     api_key: Optional[str] = None
     info: ApiKeyInfo
