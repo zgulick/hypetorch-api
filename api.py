@@ -22,6 +22,7 @@ from db_historical import (
 # Add these new imports
 from auth_middleware import get_api_key, api_key_required
 from api_key_routes import router as api_key_router
+from api_key_manager import create_api_key, get_api_keys, revoke_api_key
 
 # Initialize the database
 try:
@@ -61,7 +62,7 @@ app.add_middleware(
 )
 
 # Register the API key management routes
-app.include_router(api_key_router)
+app.include_router(api_key_router, prefix="/admin/keys")
 
 # Set the admin secret from environment variable or use a default for development
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "temporary-dev-secret")

@@ -1,4 +1,5 @@
 # api_key_routes.py
+import os
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import Optional, List
@@ -27,7 +28,9 @@ class ApiKeyResponse(BaseModel):
     info: ApiKeyInfo
 
 def verify_admin(admin_key: str = Query(None)):
-    """Simple admin verification - replace with proper auth later"""
+    """Simple admin verification using environment variable"""
+    ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "default-unsafe-secret")
+    
     if admin_key != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized access to admin functions")
     return True
