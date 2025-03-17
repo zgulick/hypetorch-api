@@ -20,8 +20,14 @@ class ApiKeyInfo(BaseModel):
     id: int
     client_name: str
     is_active: bool
-    created_at: str
+    created_at: str  # This expects a string
     expires_at: Optional[str] = None
+    
+    class Config:
+        # Add this to auto-convert datetime objects
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
 
 class ApiKeyResponse(BaseModel):
     api_key: Optional[str] = None

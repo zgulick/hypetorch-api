@@ -95,6 +95,14 @@ def get_api_keys():
         )
         
         keys = cursor.fetchall()
+        
+        # Convert datetime objects to strings
+        for key in keys:
+            if key['created_at']:
+                key['created_at'] = key['created_at'].isoformat()
+            if key['expires_at']:
+                key['expires_at'] = key['expires_at'].isoformat()
+                
         return keys
         
     except Exception as e:
