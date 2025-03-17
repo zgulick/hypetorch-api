@@ -62,7 +62,7 @@ app.add_middleware(
 )
 
 # Register the API key management routes
-app.include_router(api_key_router, prefix="/api/admin/keys")
+app.include_router(api_key_router)  # Remove the prefix here
 
 # Set the admin secret from environment variable or use a default for development
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "temporary-dev-secret")
@@ -589,6 +589,17 @@ async def delete_entity_endpoint(entity_id: str, keyinfo: dict = Depends(get_api
     except Exception as e:
         print(f"❌ Error deleting entity: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error deleting entity: {str(e)}")
+
+# Add these to api.py
+@app.get("/api/test")
+def test_api():
+    """Simple test endpoint to verify API is working"""
+    return {"status": "API is working"}
+
+@app.get("/api/admin/keys/test")
+def test_admin_keys():
+    """Test endpoint to verify admin keys path is working"""
+    return {"status": "Admin keys path is accessible"}
 
 @app.get("/api/admin/settings")
 def get_settings(key_info: dict = Depends(get_api_key)):
