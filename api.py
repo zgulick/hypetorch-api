@@ -145,7 +145,7 @@ def load_data():
 # API Endpoints
 
 @app.get("/api/entities")
-def get_entities():
+def get_entities(key_info: dict = Depends(get_api_key)):
     """Returns a list of all tracked entities (players, teams, brands, etc.)."""
     data = load_data()
     return list(data.get("hype_scores", {}).keys())
@@ -212,7 +212,7 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
         raise HTTPException(status_code=500, detail=f"Server error processing entity data: {str(e)}")
 
 @app.put("/api/entities/{entity_id}")
-async def update_entity_endpoint(entity_id: str, entity_data: dict):
+async def update_entity_endpoint(entity_id: str, entity_data: dict, keyinfo: dict = Depends(get_api_key)):
     """Updates details for a specific entity."""
     try:
         # Convert underscores to spaces in entity name
@@ -253,7 +253,7 @@ async def update_entity_endpoint(entity_id: str, entity_data: dict):
         raise HTTPException(status_code=500, detail=f"Error updating entity: {str(e)}")
 
 @app.post("/api/entities")
-async def create_entity_endpoint(entity_data: dict):
+async def create_entity_endpoint(entity_data: dict, keyinfo: dict = Depends(get_api_key)):
     """Creates a new entity."""
     try:
         # Validate required fields
@@ -300,7 +300,7 @@ def get_hype_scores(key_info: dict = Depends(get_api_key)):
         raise HTTPException(status_code=500, detail=f"Server error retrieving hype scores: {str(e)}")
 
 @app.get("/api/rodmn_scores")
-def get_rodmn_scores():
+def get_rodmn_scores(key_info: dict = Depends(get_api_key)):
     """Returns all RODMN scores from the JSON file."""
     data = load_data()
     if "rodmn_scores" not in data:
@@ -310,7 +310,7 @@ def get_rodmn_scores():
     return data["rodmn_scores"]
 
 @app.get("/api/controversial")
-def get_controversial_entities(limit: int = 10):
+def get_controversial_entities(limit: int = 10, key_info: dict = Depends(get_api_key)):
     """Returns entities sorted by RODMN score (most controversial first)."""
     data = load_data()
     if "rodmn_scores" not in data:
@@ -326,7 +326,7 @@ def get_controversial_entities(limit: int = 10):
     return [{"name": name, "rodmn_score": score} for name, score in sorted_entities]
 
 @app.get("/api/entities/{entity_id}/metrics")
-def get_entity_metrics(entity_id: str):
+def get_entity_metrics(entity_id: str, key_info: dict = Depends(get_api_key)):
     """Returns engagement metrics for a specific entity."""
     try:
         data = load_data()
@@ -354,9 +354,9 @@ def get_entity_metrics(entity_id: str):
     except Exception as e:
         print(f"Error retrieving metrics for entity {entity_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error retrieving entity metrics: {str(e)}")
-    
+           
 @app.get("/api/entities/{entity_id}/trending")
-def get_entity_trending(entity_id: str):
+def get_entity_trending(entity_id: str, key_info: dict = Depends(get_api_key)):
     """Returns trending data for a specific entity."""
     data = load_data()
     entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
@@ -389,21 +389,21 @@ def get_entity_trending(entity_id: str):
     }
 
 @app.get("/api/last_updated")
-def get_last_updated():
+def get_last_updated(key_info: dict = Depends(get_api_key)):
     """Returns the last modified timestamp of the JSON file."""
     if DATA_FILE.exists():
         return {"last_updated": os.path.getmtime(DATA_FILE)}
     return {"message": "No data available."}
 
 @app.get("/api/entities/{entity_id}/history")
-def get_entity_history_endpoint(entity_id: str, limit: int = 30):
+def get_entity_history_endpoint(entity_id: str, limit: int = 30, key_info: dict = Depends(get_api_key)):
     """Returns historical HYPE score data for a specific entity."""
     entity_name = entity_id.replace("_", " ")
     history = get_entity_history_data(entity_name, limit)
     return {"name": entity_name, "history": history}
 
 @app.post("/api/store_historical")
-def store_historical_data(time_period: str = Query("last_30_days"), file: UploadFile = File(...)):
+def store_historical_data(time_period: str = Query("last_30_days"), file: UploadFile = File(...), key_info: dict = Depends(get_api_key)):
     """Store current HYPE data as a historical snapshot."""
     try:
         content = file.file.read()
@@ -421,13 +421,14 @@ def store_historical_data(time_period: str = Query("last_30_days"), file: Upload
         raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
-
+    
 @app.get("/api/entities/{entity_id}/history")
 def get_entity_hype_history(
     entity_id: str, 
     limit: int = 30, 
     start_date: Optional[str] = None, 
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    key_info: dict = Depends(get_api_key)
 ):
     """Returns historical HYPE score data for a specific entity."""
     entity_name = entity_id.replace("_", " ")
@@ -440,7 +441,8 @@ def get_entity_metric_history(
     metric_type: str,
     limit: int = 30, 
     start_date: Optional[str] = None, 
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    key_info: dict = Depends(get_api_key)
 ):
     """Returns historical metrics data for a specific entity and metric type."""
     entity_name = entity_id.replace("_", " ")
@@ -457,14 +459,15 @@ def get_trending_entities_endpoint(
     limit: int = 10,
     time_period: Optional[str] = None,
     category: Optional[str] = None,
-    subcategory: Optional[str] = None
+    subcategory: Optional[str] = None,
+    key_info: dict = Depends(get_api_key)
 ):
     """Returns trending entities based on recent changes in metrics."""
     trending = get_trending_entities(metric, limit, time_period, category, subcategory)
     return {"trending": trending}
 
 @app.get("/api/update_entities_json")
-def update_entities_json():
+def update_entities_json(key_info: dict = Depends(get_api_key)):
     """Trigger a manual update of the entities.json file from the database."""
     try:
         from db_wrapper import export_entities_to_json
@@ -475,9 +478,9 @@ def update_entities_json():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating entities JSON: {str(e)}")
-
+    
 @app.post("/api/upload_json")
-def upload_json(file: UploadFile = File(...)):
+def upload_json(file: UploadFile = File(...), key_info: dict = Depends(get_api_key)):
     """Uploads a new JSON file, saves to database, and replaces the current file."""
     try:
         content = file.file.read()
@@ -500,15 +503,15 @@ def upload_json(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
-        
+            
 @app.get("/api/debug")
-def debug_json():
+def debug_json(key_info: dict = Depends(get_api_key)):
     """Debug endpoint to inspect JSON file contents."""
     data = load_data()
     return data  # Returns full JSON for debugging
 
 @app.get("/api/debug/database")
-def debug_database():
+def debug_database(key_info: dict = Depends(get_api_key)):
     """Debug endpoint to check database information."""
     return {
         "database_available": DB_AVAILABLE,
@@ -567,7 +570,7 @@ def health_check():
     return health_info
 
 @app.delete("/api/entities/{entity_id}")
-async def delete_entity_endpoint(entity_id: str):
+async def delete_entity_endpoint(entity_id: str, keyinfo: dict = Depends(get_api_key)):
     """Deletes a specific entity."""
     try:
         # Convert underscores to spaces in entity name
@@ -584,7 +587,177 @@ async def delete_entity_endpoint(entity_id: str):
     except Exception as e:
         print(f"❌ Error deleting entity: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error deleting entity: {str(e)}")
-    
+
+@app.get("/api/admin/settings")
+def get_settings(key_info: dict = Depends(get_api_key)):
+    """Returns dashboard settings from the database."""
+    try:
+        conn = get_pg_connection()
+        if not conn:
+            raise Exception("Failed to connect to database")
+            
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        # Get settings from database
+        cursor.execute("""
+            SELECT * FROM system_settings 
+            WHERE id = 1
+        """)
+        
+        settings = cursor.fetchone()
+        conn.close()
+        
+        # If no settings found, create default settings
+        if not settings:
+            # Return defaults since we haven't saved any settings yet
+            return {
+                "dashboardTitle": "HYPE Analytics Dashboard",
+                "featuredEntities": "Caitlin Clark, Angel Reese, Breanna Stewart, Sabrina Ionescu, WNBA",
+                "defaultTimeframe": "last_30_days",
+                "enableRodmnScore": True,
+                "enableSentimentAnalysis": True,
+                "enableTalkTimeMetric": True,
+                "enableWikipediaViews": True,
+                "enableRedditMentions": True,
+                "enableGoogleTrends": True,
+                "minEntityDisplayCount": 5,
+                "maxEntityDisplayCount": 10,
+                "refreshInterval": 0,
+                "publicDashboard": True,
+            }
+        
+        return settings
+    except Exception as e:
+        print(f"Error retrieving settings: {str(e)}")
+        # Return default settings if there's an error
+        return {
+            "dashboardTitle": "HYPE Analytics Dashboard",
+            "featuredEntities": "Caitlin Clark, Angel Reese, Breanna Stewart, Sabrina Ionescu, WNBA",
+            "defaultTimeframe": "last_30_days",
+            "enableRodmnScore": True,
+            "enableSentimentAnalysis": True,
+            "enableTalkTimeMetric": True,
+            "enableWikipediaViews": True,
+            "enableRedditMentions": True,
+            "enableGoogleTrends": True,
+            "minEntityDisplayCount": 5,
+            "maxEntityDisplayCount": 10,
+            "refreshInterval": 0,
+            "publicDashboard": True,
+        }
+
+@app.post("/api/admin/settings")
+def save_settings(settings: dict, key_info: dict = Depends(get_api_key)):
+    """Saves dashboard settings to the database."""
+    try:
+        conn = get_pg_connection()
+        if not conn:
+            raise Exception("Failed to connect to database")
+            
+        cursor = conn.cursor()
+        
+        # Check if settings table exists, create it if not
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS system_settings (
+                id INTEGER PRIMARY KEY,
+                dashboardTitle TEXT,
+                featuredEntities TEXT,
+                defaultTimeframe TEXT,
+                enableRodmnScore BOOLEAN,
+                enableSentimentAnalysis BOOLEAN,
+                enableTalkTimeMetric BOOLEAN,
+                enableWikipediaViews BOOLEAN,
+                enableRedditMentions BOOLEAN,
+                enableGoogleTrends BOOLEAN,
+                minEntityDisplayCount INTEGER,
+                maxEntityDisplayCount INTEGER,
+                refreshInterval INTEGER,
+                publicDashboard BOOLEAN,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Check if settings already exist
+        cursor.execute("SELECT id FROM system_settings WHERE id = 1")
+        exists = cursor.fetchone()
+        
+        if exists:
+            # Update existing settings
+            cursor.execute("""
+                UPDATE system_settings SET
+                    dashboardTitle = %s,
+                    featuredEntities = %s,
+                    defaultTimeframe = %s,
+                    enableRodmnScore = %s,
+                    enableSentimentAnalysis = %s,
+                    enableTalkTimeMetric = %s,
+                    enableWikipediaViews = %s,
+                    enableRedditMentions = %s,
+                    enableGoogleTrends = %s,
+                    minEntityDisplayCount = %s,
+                    maxEntityDisplayCount = %s,
+                    refreshInterval = %s,
+                    publicDashboard = %s,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = 1
+            """, (
+                settings.get("dashboardTitle", "HYPE Analytics Dashboard"),
+                settings.get("featuredEntities", ""),
+                settings.get("defaultTimeframe", "last_30_days"),
+                settings.get("enableRodmnScore", True),
+                settings.get("enableSentimentAnalysis", True),
+                settings.get("enableTalkTimeMetric", True),
+                settings.get("enableWikipediaViews", True),
+                settings.get("enableRedditMentions", True),
+                settings.get("enableGoogleTrends", True),
+                settings.get("minEntityDisplayCount", 5),
+                settings.get("maxEntityDisplayCount", 10),
+                settings.get("refreshInterval", 0),
+                settings.get("publicDashboard", True)
+            ))
+        else:
+            # Insert new settings
+            cursor.execute("""
+                INSERT INTO system_settings (
+                    id,
+                    dashboardTitle,
+                    featuredEntities,
+                    defaultTimeframe,
+                    enableRodmnScore,
+                    enableSentimentAnalysis,
+                    enableTalkTimeMetric,
+                    enableWikipediaViews,
+                    enableRedditMentions,
+                    enableGoogleTrends,
+                    minEntityDisplayCount,
+                    maxEntityDisplayCount,
+                    refreshInterval,
+                    publicDashboard
+                ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                settings.get("dashboardTitle", "HYPE Analytics Dashboard"),
+                settings.get("featuredEntities", ""),
+                settings.get("defaultTimeframe", "last_30_days"),
+                settings.get("enableRodmnScore", True),
+                settings.get("enableSentimentAnalysis", True),
+                settings.get("enableTalkTimeMetric", True),
+                settings.get("enableWikipediaViews", True),
+                settings.get("enableRedditMentions", True),
+                settings.get("enableGoogleTrends", True),
+                settings.get("minEntityDisplayCount", 5),
+                settings.get("maxEntityDisplayCount", 10),
+                settings.get("refreshInterval", 0),
+                settings.get("publicDashboard", True)
+            ))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "Settings saved successfully"}
+    except Exception as e:
+        print(f"Error saving settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error saving settings: {str(e)}")
+
 # Import entities from JSON to database on startup
 print("\n🔄 Importing entities from JSON to database...")
 from db_wrapper import import_entities_to_database
