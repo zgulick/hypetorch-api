@@ -27,15 +27,21 @@ class ApiKeyResponse(BaseModel):
     api_key: Optional[str] = None
     info: ApiKeyInfo
 
-# Change this function in api_key_routes.py
 def verify_admin(admin_key: str = Query(None)):
     """Simple admin verification using environment variable"""
     # Get from environment variable
     ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "default-unsafe-secret")
+    NEXT_PUBLIC_ADMIN_SECRET = os.environ.get("NEXT_PUBLIC_ADMIN_SECRET", "")
     
-    if not admin_key or admin_key != ADMIN_SECRET:
-        raise HTTPException(status_code=403, detail="Unauthorized access to admin functions")
-    return True
+    print(f"Received admin key: {admin_key}")
+    print(f"Expected ADMIN_SECRET: {ADMIN_SECRET}")
+    print(f"Expected NEXT_PUBLIC_ADMIN_SECRET: {NEXT_PUBLIC_ADMIN_SECRET}")
+    
+    # Check against both possible keys
+    if admin_key and (admin_key == ADMIN_SECRET or admin_key == NEXT_PUBLIC_ADMIN_SECRET):
+        return True
+    
+    raise HTTPException(status_code=403, detail="Unauthorized access to admin functions")
 
 @router.post("", response_model=ApiKeyResponse)
 def admin_create_key(key_data: ApiKeyCreate, _: bool = Depends(verify_admin)):
