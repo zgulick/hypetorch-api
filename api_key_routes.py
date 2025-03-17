@@ -53,7 +53,7 @@ def admin_create_key(key_data: ApiKeyCreate, _: bool = Depends(verify_admin)):
 
 @router.get("", response_model=List[ApiKeyInfo])
 def admin_list_keys(_: bool = Depends(verify_admin)):
-    """Admin endpoint to list all API keys"""
+    print("🔍 Admin Keys Route Hit!")  # Add this debug print
     try:
         return get_api_keys()
     except Exception as e:

@@ -62,7 +62,7 @@ app.add_middleware(
 )
 
 # Register the API key management routes
-app.include_router(api_key_router, prefix="/admin/keys")
+app.include_router(api_key_router, prefix="/api/admin/keys")
 
 # Set the admin secret from environment variable or use a default for development
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "temporary-dev-secret")
@@ -142,7 +142,8 @@ def load_data():
         print(f"❌ Error loading data from database: {e}")
         # As fallback, try to use load_latest_data
         return load_latest_data()
-    
+
+
 # API Endpoints
 
 @app.get("/api/entities")
