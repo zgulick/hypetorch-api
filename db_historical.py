@@ -8,13 +8,14 @@ from psycopg2.extras import RealDictCursor
 # Import functions from db.py
 from db import get_connection, execute_query
 
-def store_hype_data(data, time_period):
+def store_hype_data(data, time_period, date_range=None):
     """
     Store HYPE scores and component metrics in the database.
     
     Args:
         data (dict): Dictionary containing HYPE scores and component metrics
         time_period (str): Time period for this data (e.g., "last_7_days")
+        date_range (dict, optional): Dictionary with 'start' and 'end' date strings
     
     Returns:
         bool: Success status
@@ -43,7 +44,9 @@ def store_hype_data(data, time_period):
             score FLOAT NOT NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             time_period TEXT,
-            algorithm_version TEXT
+            algorithm_version TEXT,
+            date_start TEXT,
+            date_end TEXT
         )
         """)
         
@@ -62,6 +65,18 @@ def store_hype_data(data, time_period):
         print("Tables created successfully.")
         
         timestamp = datetime.now()
+        date_start = None
+        date_end = None
+        
+        # Extract date range information
+        if date_range:
+            if 'start' in date_range:
+                date_start = date_range['start']
+                print(f"✅ Using date_start: {date_start}")
+            
+            if 'end' in date_range:
+                date_end = date_range['end']
+                print(f"✅ Using date_end: {date_end}")
         
         # Process each entity
         for entity_name, hype_score in data.get("hype_scores", {}).items():
@@ -88,13 +103,14 @@ def store_hype_data(data, time_period):
                 )
                 entity_id = cursor.fetchone()[0]
             
-            # Store HYPE score
+            # Store HYPE score with date range info
             cursor.execute(
                 """
-                INSERT INTO hype_scores (entity_id, score, timestamp, time_period, algorithm_version)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO hype_scores 
+                (entity_id, score, timestamp, time_period, algorithm_version, date_start, date_end)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (entity_id, hype_score, timestamp, time_period, "1.0")
+                (entity_id, hype_score, timestamp, time_period, "1.0", date_start, date_end)
             )
             
             # Store RODMN score if available
@@ -137,7 +153,7 @@ def store_hype_data(data, time_period):
             conn.rollback()
             conn.close()
         return False
-
+    
 def get_entity_history(entity_name, limit=30, start_date=None, end_date=None):
     """
     Get historical HYPE scores for a specific entity.
