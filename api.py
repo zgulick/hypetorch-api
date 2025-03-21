@@ -11,6 +11,7 @@ from psycopg2 import extras
 from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column, execute_pooled_query, update_entity, create_entity, delete_entity, import_entities_to_database
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
 from typing import Optional
+from datetime import datetime
 from db_wrapper import get_pg_connection
 from fastapi import Query
 from db_historical import (
@@ -658,6 +659,134 @@ def get_settings(key_info: dict = Depends(get_api_key)):
             "refreshInterval": 0,
             "publicDashboard": True,
         }
+
+@app.get("/api/compare")
+def compare_entities(
+    entities: str,  # Comma-separated list of entity names
+    metrics: Optional[str] = None,  # Comma-separated list of metrics
+    start_date: Optional[str] = None,  # Format: YYYY-MM-DD
+    end_date: Optional[str] = None,  # Format: YYYY-MM-DD
+    include_history: bool = False,  # Whether to include historical data
+    time_period: Optional[str] = None,  # e.g., "last_30_days"
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Compare multiple entities across various metrics with optional time filtering.
+    Returns both current values and historical trends.
+    """
+    try:
+        print(f"📊 Entity comparison request: entities={entities}, metrics={metrics}")
+        
+        # Parse parameters
+        entity_list = [e.strip() for e in entities.split(",")]
+        metrics_list = [m.strip() for m in metrics.split(",")] if metrics else [
+            "hype_scores", "rodmn_scores", "mentions", "talk_time", 
+            "sentiment", "wikipedia_views", "reddit_mentions", "google_trends"
+        ]
+        
+        print(f"🔍 Parsed entities: {entity_list}")
+        print(f"🔍 Parsed metrics: {metrics_list}")
+        
+        # Initialize results
+        results = {"entities": {}, "metadata": {}}
+        for entity in entity_list:
+            results["entities"][entity] = {}
+        
+        # Base data loading
+        data = load_data()
+        
+        # Process each requested entity
+        for entity in entity_list:
+            entity_data = {}
+            
+            # Get normalized entity name (case-insensitive lookup)
+            normalized_entity = None
+            for key in data.get("hype_scores", {}):
+                if key.lower() == entity.lower():
+                    normalized_entity = key
+                    break
+            
+            if not normalized_entity:
+                print(f"⚠️ Entity not found: {entity}")
+                results["entities"][entity] = {"error": "Entity not found"}
+                continue
+            
+            # Process each requested metric
+            for metric in metrics_list:
+                base_metric = metric.rstrip("s")  # Remove plural 's' if present
+                
+                # Map metric names to data dictionary keys
+                metric_map = {
+                    "hype_score": "hype_scores",
+                    "rodmn_score": "rodmn_scores",
+                    "mention": "mention_counts",
+                    "talk_time": "talk_time_counts",
+                    "sentiment": "player_sentiment_scores",
+                    "wikipedia_view": "wikipedia_views",
+                    "reddit_mention": "reddit_mentions",
+                    "google_trend": "google_trends",
+                    "google_news": "google_news_mentions"
+                }
+                
+                data_key = metric_map.get(base_metric, metric)
+                
+                # Extract value from the appropriate data dictionary
+                if data_key in data:
+                    metric_data = data[data_key]
+                    # Case-insensitive lookup
+                    for key, value in metric_data.items():
+                        if key.lower() == normalized_entity.lower():
+                            if isinstance(value, list):
+                                # For sentiment scores, calculate average
+                                entity_data[base_metric] = sum(value) / len(value) if value else 0
+                            else:
+                                entity_data[base_metric] = value
+                            break
+                    
+                    # If not found, set to 0 or empty
+                    if base_metric not in entity_data:
+                        entity_data[base_metric] = 0 if base_metric != "sentiment" else []
+            
+            # Add historical data if requested
+            if include_history:
+                entity_data["history"] = {}
+                
+                # Add HYPE score history
+                if "hype_score" in entity_data or "hype_scores" in metrics_list:
+                    history = get_entity_history(normalized_entity, limit=30, start_date=start_date, end_date=end_date)
+                    entity_data["history"]["hype_score"] = history
+                
+                # Add metric history for each requested metric
+                for metric in metrics_list:
+                    base_metric = metric.rstrip("s")
+                    if base_metric != "hype_score" and base_metric in metric_map:
+                        data_key = metric_map[base_metric]
+                        if data_key in data:
+                            metric_history = get_entity_metrics_history(
+                                normalized_entity, data_key, limit=30, 
+                                start_date=start_date, end_date=end_date
+                            )
+                            entity_data["history"][base_metric] = metric_history
+            
+            results["entities"][entity] = entity_data
+        
+        # Add metadata
+        results["metadata"] = {
+            "timestamp": datetime.now().isoformat(),
+            "metrics_included": metrics_list,
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "time_period": time_period
+            }
+        }
+        
+        return results
+    
+    except Exception as e:
+        print(f"❌ Error comparing entities: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error comparing entities: {str(e)}")
 
 @app.post("/api/admin/settings")
 def save_settings(settings: dict, key_info: dict = Depends(get_api_key)):
