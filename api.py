@@ -124,6 +124,63 @@ async def log_requests(request: Request, call_next):
         logger.error(f"Request {request_id} failed: {str(e)}")
         raise
 
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """
+    Middleware to enforce rate limits on API endpoints.
+    Rate limits are based on API key and endpoint.
+    """
+    start_time = time.time()
+    
+    # Skip rate limiting for non-API routes
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    
+    # Get API key from header
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        # No API key, use IP address as identifier
+        client_id = request.client.host if request.client else "unknown"
+    else:
+        client_id = api_key
+    
+    # Check rate limit
+    from rate_limiter import rate_limiter
+    allowed, rate_limit_info = rate_limiter.check_rate_limit(client_id, request.url.path)
+    
+    if not allowed:
+        # Rate limit exceeded
+        return JSONResponse(
+            status_code=429,
+            content={
+                "status": "error",
+                "error": {
+                    "code": 429,
+                    "message": "Rate limit exceeded. Please slow down your requests.",
+                    "details": {
+                        "retry_after": rate_limit_info["X-RateLimit-Reset"]
+                    }
+                },
+                "metadata": {
+                    "timestamp": time.time()
+                }
+            },
+            headers={
+                "Retry-After": rate_limit_info["X-RateLimit-Reset"],
+                **rate_limit_info
+            }
+        )
+    
+    # Process the request
+    response = await call_next(request)
+    
+    # Add rate limit headers to the response
+    for header, value in rate_limit_info.items():
+        response.headers[header] = value
+    
+    return response
+
+
 def load_data(entity_id=None):
     """Load data with optional entity filtering."""
     try:
@@ -753,6 +810,42 @@ async def delete_entity_endpoint(entity_id: str, keyinfo: dict = Depends(get_api
     except Exception as e:
         print(f"❌ Error deleting entity: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error deleting entity: {str(e)}")
+
+@app.get("/api/admin/rate-limits")
+def get_rate_limits(key_info: dict = Depends(get_api_key)):
+    """
+    Get rate limit usage for all clients.
+    Admin only endpoint.
+    """
+    from rate_limiter import rate_limiter
+    
+    # Example of how you might get all API keys
+    all_clients = []
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT key_hash, client_name FROM api_keys WHERE is_active = TRUE")
+            all_clients = cursor.fetchall()
+    except Exception as e:
+        print(f"Error fetching API keys: {e}")
+    
+    # Get usage for each client
+    client_usage = {}
+    for client in all_clients:
+        client_id = client["key_hash"]
+        client_name = client["client_name"]
+        usage = rate_limiter.get_client_usage(client_id)
+        if usage:  # Only include clients with usage
+            client_usage[client_name] = usage
+    
+    return {
+        "status": "success",
+        "data": client_usage,
+        "metadata": {
+            "timestamp": time.time(),
+            "client_count": len(client_usage)
+        }
+    }
 
 # Add these to api.py
 @app.get("/api/test")
