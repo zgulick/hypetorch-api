@@ -144,11 +144,11 @@ class DatabaseConnectionPool:
     def get_connection(self, cursor_factory=None):
         """
         Get a database connection from the pool.
-        
+    
         Args:
             cursor_factory: Optional factory to use when creating cursors
-                           (only applicable for PostgreSQL)
-        
+                       (only applicable for PostgreSQL)
+    
         Returns:
             A database connection
         """
@@ -156,17 +156,17 @@ class DatabaseConnectionPool:
             try:
                 # Get connection from PostgreSQL pool
                 conn = self.pg_pool.getconn(key=threading.get_ident())
-                
+            
                 # If this is the first time getting this connection, set cursor factory
                 if cursor_factory:
-                    # We need to store the cursor factory on the connection
-                    setattr(conn, '_cursor_factory', cursor_factory)
-                
+                    # Store the cursor factory directly as an attribute
+                    conn._cursor_factory = cursor_factory
+            
                 # Check if connection is still alive
                 cursor = conn.cursor()
                 cursor.execute("SELECT 1")
                 cursor.close()
-                
+            
                 logger.debug("Retrieved PostgreSQL connection from pool")
                 return conn
             except Exception as e:
@@ -176,7 +176,7 @@ class DatabaseConnectionPool:
                         self.pg_pool.putconn(conn)
                     except:
                         pass
-                
+            
                 # Fall back to SQLite if PostgreSQL fails
                 logger.warning("Falling back to SQLite after PostgreSQL connection failure")
                 return self._get_sqlite_connection()
