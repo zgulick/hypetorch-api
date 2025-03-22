@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Security
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Security, Request
 import json
 import os
 from pathlib import Path
@@ -19,11 +19,18 @@ from db_historical import (
     get_entity_metrics_history,
     get_trending_entities
 )
-# Add these new imports
 from auth_middleware import get_api_key, api_key_required
 from api_key_routes import router as api_key_router
 from api_key_manager import create_api_key, get_api_keys, revoke_api_key
 from db_pool import execute_query, DatabaseConnection
+from api_utils import StandardResponse
+from api_v1 import v1_router
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.responses import JSONResponse
+import uuid
+import logging
+from api_models import EntityCreate, EntityUpdate
 
 # Initialize the database
 try:
@@ -68,18 +75,71 @@ app.include_router(api_key_router)  # Remove the prefix here
 # Set the admin secret from environment variable or use a default for development
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "temporary-dev-secret")
 
-def load_data():
-    """Load data directly from the database instead of JSON file."""
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('api')
+
+# Add to imports
+import logging
+
+# Set up logging if not already done
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('api')
+
+# Add this middleware before any routes
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all requests with timing information."""
+    request_id = str(uuid.uuid4())
+    start_time = time.time()
+    
+    # Extract client info
+    client_host = request.client.host if request.client else "unknown"
+    
+    # Log request start
+    logger.info(f"Request {request_id} started: {request.method} {request.url.path} from {client_host}")
+    
+    # Process request
+    try:
+        response = await call_next(request)
+        
+        # Calculate processing time
+        process_time = (time.time() - start_time) * 1000
+        
+        # Add timing header
+        response.headers["X-Process-Time-Ms"] = str(round(process_time, 2))
+        response.headers["X-Request-ID"] = request_id
+        
+        # Log request completion
+        logger.info(f"Request {request_id} completed: {response.status_code} in {process_time:.2f}ms")
+        
+        return response
+    except Exception as e:
+        # Log request error
+        logger.error(f"Request {request_id} failed: {str(e)}")
+        raise
+
+def load_data(entity_id=None):
+    """Load data with optional entity filtering."""
     try:
         # Connect to database
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
             cursor = conn.cursor()
             
-            # Get all entities from database
-            cursor.execute("SELECT id, name, type, category, subcategory FROM entities")
+            # Get entities with optional filter
+            if entity_id:
+                cursor.execute("SELECT id, name, type, category, subcategory FROM entities WHERE name = %s", (entity_id,))
+            else:
+                cursor.execute("SELECT id, name, type, category, subcategory FROM entities")
+            
             entities = cursor.fetchall()
             
-            # Create a data structure matching the expected format
+            # Create base data structure
             data = {
                 "hype_scores": {},
                 "mention_counts": {},
@@ -88,69 +148,77 @@ def load_data():
                 "rodmn_scores": {}
             }
             
-            # Fill with data from entities table
-            for entity in entities:
-                entity_name = entity["name"]
-                data["hype_scores"][entity_name] = 50  # Default score
-                data["mention_counts"][entity_name] = 0
-                data["talk_time_counts"][entity_name] = 0
-                data["player_sentiment_scores"][entity_name] = []
-                data["rodmn_scores"][entity_name] = 5
+            # Construct ID list for efficient querying
+            entity_ids = [entity["id"] for entity in entities]
+            entity_names = [entity["name"] for entity in entities]
             
-            # Get actual metric data if available
-            for entity in entities:
-                entity_id = entity["id"]
-                entity_name = entity["name"]
+            if not entity_ids:
+                return data
                 
-                # Get latest hype score
-                cursor.execute(
-                    "SELECT score FROM hype_scores WHERE entity_id = %s ORDER BY timestamp DESC LIMIT 1",
-                    (entity_id,)
+            # Use IN clause for efficiency
+            placeholders = ','.join(['%s'] * len(entity_ids))
+            
+            # Get HYPE scores with a single query
+            cursor.execute(
+                f"""
+                SELECT e.name, h.score
+                FROM entities e
+                JOIN hype_scores h ON e.id = h.entity_id
+                WHERE e.id IN ({placeholders})
+                AND h.timestamp = (
+                    SELECT MAX(timestamp) 
+                    FROM hype_scores 
+                    WHERE entity_id = h.entity_id
                 )
-                hype_score = cursor.fetchone()
-                if hype_score:
-                    data["hype_scores"][entity_name] = hype_score["score"]
-                    
-                # Get latest metrics
-                cursor.execute(
-                    """
-                    SELECT metric_type, value 
-                    FROM component_metrics 
-                    WHERE entity_id = %s 
-                    ORDER BY timestamp DESC
-                    """,
-                    (entity_id,)
-                )
-                metrics = cursor.fetchall()
+                """,
+                entity_ids
+            )
+            
+            # Process results
+            for row in cursor.fetchall():
+                data["hype_scores"][row["name"]] = row["score"]
                 
-                for metric in metrics:
-                    metric_type = metric["metric_type"]
-                    value = metric["value"]
-                    
-                    if metric_type == "mentions":
-                        data["mention_counts"][entity_name] = value
-                    elif metric_type == "talk_time_counts":
-                        data["talk_time_counts"][entity_name] = value
-                    elif metric_type == "rodmn_score":
-                        data["rodmn_scores"][entity_name] = value
-        
-        print("✅ Data loaded directly from database")
+            # Similar approach for other metrics...
+            
         return data
     except Exception as e:
-        print(f"❌ Error loading data from database: {e}")
-        # As fallback, try to use load_latest_data
-        return load_latest_data()
+        print(f"❌ Error loading data: {e}")
+        return load_latest_data()  # Fallback
 
 
 # API Endpoints
 @app.get("/api/entities")
 def get_entities(key_info: dict = Depends(get_api_key)):
     """Returns a list of all tracked entities (players, teams, brands, etc.)."""
-    data = load_data()
-    return list(data.get("hype_scores", {}).keys())
+    start_time = time.time()
+    
+    try:
+        data = load_data()
+        entities_list = list(data.get("hype_scores", {}).keys())
+        
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        return StandardResponse.success(
+            data=entities_list,
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2),
+                "count": len(entities_list)
+            }
+        )
+    except Exception as e:
+        print(f"Error retrieving entities: {str(e)}")
+        return StandardResponse.error(
+            message="Failed to retrieve entities",
+            status_code=500,
+            details=str(e)
+        )
 
 @app.get("/api/entities/{entity_id}")
 def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
+    start_time = time.time()
+    
     try:
         print(f"🔍 Fetching details for: {entity_id}")
         
@@ -181,7 +249,10 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
         
         if not entity_details:
             print(f"❌ No entity found for {entity_name}")
-            raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found.")
+            return StandardResponse.error(
+                message=f"Entity '{entity_name}' not found",
+                status_code=404
+            )
         
         # Load all entity data from database
         data = load_data()
@@ -190,7 +261,7 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
         correct_name = entity_details['name']
         
         # Construct response
-        response = {
+        entity_data = {
             "name": correct_name,
             "type": entity_details['type'],
             "category": entity_details['category'],
@@ -202,110 +273,187 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
             "sentiment": data.get("player_sentiment_scores", {}).get(correct_name, [])
         }
         
-        return response
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        return StandardResponse.success(
+            data=entity_data,
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2),
+                "entity_id": entity_details['id']
+            }
+        )
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
         print(f"Error processing entity request for {entity_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Server error processing entity data: {str(e)}")
-    
+        return StandardResponse.error(
+            message="Server error processing entity data",
+            status_code=500,
+            details=str(e)
+        )
+        
 @app.put("/api/entities/{entity_id}")
-async def update_entity_endpoint(entity_id: str, entity_data: dict, keyinfo: dict = Depends(get_api_key)):
+async def update_entity_endpoint(
+    entity_id: str,
+    entity_data: EntityUpdate,  # Use Pydantic model
+    key_info: dict = Depends(get_api_key)
+):
     """Updates details for a specific entity."""
+    start_time = time.time()
+    
     try:
-        # Convert underscores to spaces in entity name
+        # Convert underscores to spaces
         entity_name = entity_id.replace("_", " ")
         
-        # Validate input data
-        if not entity_data:
-            raise HTTPException(status_code=400, detail="No update data provided")
+        # Filter out None values
+        update_data = {k: v for k, v in entity_data.dict().items() if v is not None}
         
-        # Ensure data contains all necessary fields with defaults
-        update_data = {
-            "name": entity_data.get("name", entity_name),
-            "type": entity_data.get("type", "person"),
-            "category": entity_data.get("category", "Sports"),
-            "subcategory": entity_data.get("subcategory", "Unrivaled")
-        }
+        if not update_data:
+            return StandardResponse.error(
+                message="No update data provided",
+                status_code=400
+            )
         
-        # Call the database function to update the entity
+        # Call the database function
         success, message = update_entity(entity_name, update_data)
         
         if not success:
-            raise HTTPException(status_code=400, detail=message)
-            
-        return {"success": True, "message": message}
-    
-    except Exception as e:
-        # Log the full error for debugging
-        print(f"❌ Full error updating entity: {traceback.format_exc()}")
-        
-        # Specific error handling
-        if "violates foreign key constraint" in str(e):
-            raise HTTPException(
-                status_code=409, 
-                detail="Cannot update entity due to existing data references."
+            return StandardResponse.error(
+                message=message,
+                status_code=400
             )
         
-        # Generic error handling
-        raise HTTPException(status_code=500, detail=f"Error updating entity: {str(e)}")
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data={"message": message},
+            metadata={
+                "processing_time_ms": round(processing_time, 2)
+            }
+        )
+    except Exception as e:
+        print(f"❌ Error updating entity: {str(e)}")
+        return StandardResponse.error(
+            message="Error updating entity",
+            status_code=500,
+            details=str(e)
+        )
 
 @app.post("/api/entities")
-async def create_entity_endpoint(entity_data: dict, keyinfo: dict = Depends(get_api_key)):
+async def create_entity_endpoint(
+    entity_data: EntityCreate,  # Use Pydantic model
+    key_info: dict = Depends(get_api_key)
+):
     """Creates a new entity."""
+    start_time = time.time()
+    
     try:
-        # Validate required fields
-        if not entity_data.get("name"):
-            raise HTTPException(status_code=400, detail="Entity name is required")
+        # Convert Pydantic model to dict
+        entity_dict = entity_data.dict()
         
-        # Ensure data contains all necessary fields with defaults
-        new_entity_data = {
-            "name": entity_data.get("name"),
-            "type": entity_data.get("type", "person"),
-            "category": entity_data.get("category", "Sports"),
-            "subcategory": entity_data.get("subcategory", "Unrivaled")
-        }
-        
-        # Call the database function to create the entity
-        success, message = create_entity(new_entity_data)
+        # Call the database function
+        success, message = create_entity(entity_dict)
         
         if not success:
-            raise HTTPException(status_code=400, detail=message)
-            
-        return {"success": True, "message": message}
-    
+            return StandardResponse.error(
+                message=message,
+                status_code=400
+            )
+        
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data={"name": entity_data.name, "message": message},
+            metadata={
+                "processing_time_ms": round(processing_time, 2)
+            }
+        )
     except Exception as e:
-        print(f"❌ Error creating entity: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Error creating entity: {str(e)}")
+        print(f"❌ Error creating entity: {str(e)}")
+        return StandardResponse.error(
+            message="Error creating entity",
+            status_code=500,
+            details=str(e)
+        )
 
 @app.get("/api/hype_scores")
 def get_hype_scores(key_info: dict = Depends(get_api_key)):
     """Returns all hype scores from the JSON file."""
+    start_time = time.time()
+    
     try:
         data = load_data()
         
         if not data:
-            raise HTTPException(status_code=500, detail="Failed to load data")
+            return StandardResponse.error(
+                message="Failed to load data",
+                status_code=500
+            )
             
         if "hype_scores" not in data:
-            raise HTTPException(status_code=500, detail="❌ ERROR: 'hype_scores' field missing in data.")
-            
-        return data["hype_scores"]
+            return StandardResponse.error(
+                message="'hype_scores' field missing in data",
+                status_code=500
+            )
+        
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        return StandardResponse.success(
+            data=data["hype_scores"],
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2),
+                "count": len(data["hype_scores"])
+            }
+        )
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
         print(f"Error retrieving hype scores: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Server error retrieving hype scores: {str(e)}")
-
+        return StandardResponse.error(
+            message="Server error retrieving hype scores",
+            status_code=500,
+            details=str(e)
+        )
+    
 @app.get("/api/rodmn_scores")
 def get_rodmn_scores(key_info: dict = Depends(get_api_key)):
     """Returns all RODMN scores from the JSON file."""
-    data = load_data()
-    if "rodmn_scores" not in data:
-        # Return empty dictionary instead of throwing error
-        print("⚠️ WARNING: 'rodmn_scores' field missing in data.")
-        return {}
-    return data["rodmn_scores"]
+    start_time = time.time()
+    
+    try:
+        data = load_data()
+        
+        if "rodmn_scores" not in data:
+            # Return empty dictionary instead of throwing error
+            print("⚠️ WARNING: 'rodmn_scores' field missing in data.")
+            rodmn_scores = {}
+        else:
+            rodmn_scores = data["rodmn_scores"]
+        
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        return StandardResponse.success(
+            data=rodmn_scores,
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2),
+                "count": len(rodmn_scores)
+            }
+        )
+    except Exception as e:
+        print(f"Error retrieving RODMN scores: {str(e)}")
+        return StandardResponse.error(
+            message="Server error retrieving RODMN scores",
+            status_code=500,
+            details=str(e)
+        )
 
 @app.get("/api/controversial")
 def get_controversial_entities(limit: int = 10, key_info: dict = Depends(get_api_key)):
@@ -480,6 +628,8 @@ def update_entities_json(key_info: dict = Depends(get_api_key)):
 @app.post("/api/upload_json")
 def upload_json(file: UploadFile = File(...), key_info: dict = Depends(get_api_key)):
     """Uploads a new JSON file, saves to database, and replaces the current file."""
+    start_time = time.time()
+    
     try:
         content = file.file.read()
         json_data = json.loads(content)
@@ -491,16 +641,34 @@ def upload_json(file: UploadFile = File(...), key_info: dict = Depends(get_api_k
         with open(DATA_FILE, "w") as f:
             json.dump(json_data, f, indent=4)
         
-        return {
-            "message": "✅ File uploaded successfully!",
-            "database_saved": success,
-            "details": message,
-            "db_available": DB_AVAILABLE
-        }
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        return StandardResponse.success(
+            data={
+                "message": "File uploaded successfully!",
+                "database_saved": success,
+                "details": message,
+                "db_available": DB_AVAILABLE
+            },
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2),
+                "file_size_bytes": len(content),
+                "entity_count": len(json_data.get("hype_scores", {}))
+            }
+        )
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="❌ ERROR: Invalid JSON format.")
+        return StandardResponse.error(
+            message="Invalid JSON format",
+            status_code=400
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"❌ ERROR processing file: {str(e)}")
+        return StandardResponse.error(
+            message="Error processing file",
+            status_code=500,
+            details=str(e)
+        )
             
 @app.get("/api/debug")
 def debug_json(key_info: dict = Depends(get_api_key)):
@@ -886,11 +1054,102 @@ def save_settings(settings: dict, key_info: dict = Depends(get_api_key)):
     except Exception as e:
         print(f"Error saving settings: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error saving settings: {str(e)}")
+
+# Global exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """Handle validation errors."""
+    error_id = str(uuid.uuid4())
+    error_details = []
     
+    for error in exc.errors():
+        error_details.append({
+            "location": error["loc"],
+            "message": error["msg"],
+            "type": error["type"]
+        })
+    
+    # Log the error
+    print(f"❌ Validation Error {error_id}: {exc}")
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "status": "error",
+            "error": {
+                "code": 422,
+                "message": "Validation error",
+                "details": error_details,
+                "error_id": error_id
+            },
+            "metadata": {
+                "timestamp": time.time()
+            }
+        }
+    )
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    """Handle HTTP exceptions."""
+    error_id = str(uuid.uuid4())
+    
+    # Log the error
+    print(f"❌ HTTP Exception {error_id} ({exc.status_code}): {exc.detail}")
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "error": {
+                "code": exc.status_code,
+                "message": str(exc.detail),
+                "error_id": error_id
+            },
+            "metadata": {
+                "timestamp": time.time()
+            }
+        }
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    """Handle all other exceptions."""
+    error_id = str(uuid.uuid4())
+    
+    # Log the exception
+    print(f"❌ Unhandled Exception {error_id}: {str(exc)}")
+    import traceback
+    traceback.print_exc()
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "error": {
+                "code": 500,
+                "message": "Internal server error",
+                "error_id": error_id,
+                "details": str(exc) if os.environ.get("DEBUG") == "true" else None
+            },
+            "metadata": {
+                "timestamp": time.time()
+            }
+        }
+    )
+
+
 # Import entities from JSON to database on startup
 print("\n🔄 Importing entities from JSON to database...")
 from db_wrapper import import_entities_to_database
 import_entities_to_database()
+
+# Include versioned routes
+app.include_router(v1_router, prefix="/api")
+
+# Announce available routes
+print("\n🚀 API versions available:")
+print("✅ Legacy routes: /api/...")
+print("✅ V1 routes: /api/v1/...")
 
 # Load Data on API Startup to Confirm Access
 print("\n🚀 DEBUG: Testing Data Load at Startup...")

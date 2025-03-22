@@ -297,6 +297,91 @@ def save_json_data(data):
         except:
             return False, f"Complete failure: {e}"
 
+def get_entity_metrics_batch(entity_ids, metrics=None):
+    """
+    Get metrics for multiple entities in a single query.
+    
+    Args:
+        entity_ids: List of entity IDs
+        metrics: List of metrics to retrieve (None for all)
+        
+    Returns:
+        dict: Mapped metrics by entity and metric type
+    """
+    metrics = metrics or ["hype_score", "mention_counts", "talk_time_counts", "rodmn_score"]
+    result = {metric: {} for metric in metrics}
+    
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor()
+            
+            # Convert list to tuple for SQL IN clause
+            if len(entity_ids) == 1:
+                # Special case for single ID (needs trailing comma)
+                id_tuple = f"({entity_ids[0]},)"
+            else:
+                id_tuple = str(tuple(entity_ids))
+            
+            # Customize query based on requested metrics
+            metric_to_table = {
+                "hype_score": "hype_scores",
+                "mention_counts": "component_metrics",
+                "talk_time_counts": "component_metrics",
+                "rodmn_score": "component_metrics"
+            }
+            
+            for metric in metrics:
+                table = metric_to_table.get(metric)
+                if not table:
+                    continue
+                    
+                if table == "hype_scores":
+                    query = f"""
+                    SELECT e.name, h.score
+                    FROM entities e
+                    JOIN hype_scores h ON e.id = h.entity_id
+                    WHERE e.id IN {id_tuple}
+                    AND h.timestamp = (
+                        SELECT MAX(timestamp) 
+                        FROM hype_scores 
+                        WHERE entity_id = h.entity_id
+                    )
+                    """
+                    cursor.execute(query)
+                    
+                    for row in cursor.fetchall():
+                        result["hype_score"][row["name"]] = row["score"]
+                        
+                elif table == "component_metrics":
+                    metric_field = "metric_type"
+                    metric_value = metric
+                    
+                    if metric == "rodmn_score":
+                        metric_value = "rodmn_score"
+                    
+                    query = f"""
+                    SELECT e.name, cm.value
+                    FROM entities e
+                    JOIN component_metrics cm ON e.id = cm.entity_id
+                    WHERE e.id IN {id_tuple}
+                    AND cm.{metric_field} = %s
+                    AND cm.timestamp = (
+                        SELECT MAX(timestamp) 
+                        FROM component_metrics 
+                        WHERE entity_id = cm.entity_id
+                        AND {metric_field} = %s
+                    )
+                    """
+                    cursor.execute(query, (metric_value, metric_value))
+                    
+                    for row in cursor.fetchall():
+                        result[metric][row["name"]] = row["value"]
+            
+        return result
+    except Exception as e:
+        print(f"❌ Error getting entity metrics: {e}")
+        return {metric: {} for metric in metrics}
+
 # Helper functions for entity history
 def save_entity_history_pg(cursor, data, timestamp):
     """Extract entity data and save to PostgreSQL entity_history table"""
