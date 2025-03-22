@@ -12,7 +12,6 @@ from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column, exec
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
 from typing import Optional
 from datetime import datetime
-from db_wrapper import get_pg_connection
 from fastapi import Query
 from db_historical import (
     store_hype_data, 
@@ -24,6 +23,7 @@ from db_historical import (
 from auth_middleware import get_api_key, api_key_required
 from api_key_routes import router as api_key_router
 from api_key_manager import create_api_key, get_api_keys, revoke_api_key
+from db_pool import execute_query, DatabaseConnection
 
 # Initialize the database
 try:
@@ -72,71 +72,68 @@ def load_data():
     """Load data directly from the database instead of JSON file."""
     try:
         # Connect to database
-        conn = get_pg_connection()
-        if not conn:
-            raise Exception("Failed to connect to PostgreSQL database")
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor()
             
-        # Get all entities from database
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute("SELECT id, name, type, category, subcategory FROM entities")
-        entities = cursor.fetchall()
-        
-        # Create a data structure matching the expected format
-        data = {
-            "hype_scores": {},
-            "mention_counts": {},
-            "talk_time_counts": {},
-            "player_sentiment_scores": {},
-            "rodmn_scores": {}
-        }
-        
-        # Fill with data from entities table
-        for entity in entities:
-            entity_name = entity["name"]
-            data["hype_scores"][entity_name] = 50  # Default score
-            data["mention_counts"][entity_name] = 0
-            data["talk_time_counts"][entity_name] = 0
-            data["player_sentiment_scores"][entity_name] = []
-            data["rodmn_scores"][entity_name] = 5
-        
-        # Get actual metric data if available
-        for entity in entities:
-            entity_id = entity["id"]
-            entity_name = entity["name"]
+            # Get all entities from database
+            cursor.execute("SELECT id, name, type, category, subcategory FROM entities")
+            entities = cursor.fetchall()
             
-            # Get latest hype score
-            cursor.execute(
-                "SELECT score FROM hype_scores WHERE entity_id = %s ORDER BY timestamp DESC LIMIT 1",
-                (entity_id,)
-            )
-            hype_score = cursor.fetchone()
-            if hype_score:
-                data["hype_scores"][entity_name] = hype_score["score"]
+            # Create a data structure matching the expected format
+            data = {
+                "hype_scores": {},
+                "mention_counts": {},
+                "talk_time_counts": {},
+                "player_sentiment_scores": {},
+                "rodmn_scores": {}
+            }
+            
+            # Fill with data from entities table
+            for entity in entities:
+                entity_name = entity["name"]
+                data["hype_scores"][entity_name] = 50  # Default score
+                data["mention_counts"][entity_name] = 0
+                data["talk_time_counts"][entity_name] = 0
+                data["player_sentiment_scores"][entity_name] = []
+                data["rodmn_scores"][entity_name] = 5
+            
+            # Get actual metric data if available
+            for entity in entities:
+                entity_id = entity["id"]
+                entity_name = entity["name"]
                 
-            # Get latest metrics
-            cursor.execute(
-                """
-                SELECT metric_type, value 
-                FROM component_metrics 
-                WHERE entity_id = %s 
-                ORDER BY timestamp DESC
-                """,
-                (entity_id,)
-            )
-            metrics = cursor.fetchall()
-            
-            for metric in metrics:
-                metric_type = metric["metric_type"]
-                value = metric["value"]
+                # Get latest hype score
+                cursor.execute(
+                    "SELECT score FROM hype_scores WHERE entity_id = %s ORDER BY timestamp DESC LIMIT 1",
+                    (entity_id,)
+                )
+                hype_score = cursor.fetchone()
+                if hype_score:
+                    data["hype_scores"][entity_name] = hype_score["score"]
+                    
+                # Get latest metrics
+                cursor.execute(
+                    """
+                    SELECT metric_type, value 
+                    FROM component_metrics 
+                    WHERE entity_id = %s 
+                    ORDER BY timestamp DESC
+                    """,
+                    (entity_id,)
+                )
+                metrics = cursor.fetchall()
                 
-                if metric_type == "mentions":
-                    data["mention_counts"][entity_name] = value
-                elif metric_type == "talk_time_counts":
-                    data["talk_time_counts"][entity_name] = value
-                elif metric_type == "rodmn_score":
-                    data["rodmn_scores"][entity_name] = value
+                for metric in metrics:
+                    metric_type = metric["metric_type"]
+                    value = metric["value"]
+                    
+                    if metric_type == "mentions":
+                        data["mention_counts"][entity_name] = value
+                    elif metric_type == "talk_time_counts":
+                        data["talk_time_counts"][entity_name] = value
+                    elif metric_type == "rodmn_score":
+                        data["rodmn_scores"][entity_name] = value
         
-        conn.close()
         print("✅ Data loaded directly from database")
         return data
     except Exception as e:
@@ -146,7 +143,6 @@ def load_data():
 
 
 # API Endpoints
-
 @app.get("/api/entities")
 def get_entities(key_info: dict = Depends(get_api_key)):
     """Returns a list of all tracked entities (players, teams, brands, etc.)."""
@@ -158,30 +154,30 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
     try:
         print(f"🔍 Fetching details for: {entity_id}")
         
-        # Connect directly to database
-        conn = get_pg_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
         entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
         
-        # Fetch entity with exact and case-insensitive match
-        cursor.execute("""
-            SELECT id, name, type, category, subcategory 
-            FROM entities 
-            WHERE LOWER(name) = LOWER(%s)
-        """, (entity_name,))
-        
-        entity_details = cursor.fetchone()
-        
-        # If not found, try fuzzy search
-        if not entity_details:
+        # Connect directly to database
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor()
+            
+            # Fetch entity with exact and case-insensitive match
             cursor.execute("""
                 SELECT id, name, type, category, subcategory 
                 FROM entities 
-                WHERE name ILIKE %s
-                LIMIT 1
-            """, (f"%{entity_name}%",))
+                WHERE LOWER(name) = LOWER(%s)
+            """, (entity_name,))
+            
             entity_details = cursor.fetchone()
+            
+            # If not found, try fuzzy search
+            if not entity_details:
+                cursor.execute("""
+                    SELECT id, name, type, category, subcategory 
+                    FROM entities 
+                    WHERE name ILIKE %s
+                    LIMIT 1
+                """, (f"%{entity_name}%",))
+                entity_details = cursor.fetchone()
         
         if not entity_details:
             print(f"❌ No entity found for {entity_name}")
@@ -206,14 +202,13 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
             "sentiment": data.get("player_sentiment_scores", {}).get(correct_name, [])
         }
         
-        conn.close()
         return response
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
         print(f"Error processing entity request for {entity_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error processing entity data: {str(e)}")
-
+    
 @app.put("/api/entities/{entity_id}")
 async def update_entity_endpoint(entity_id: str, entity_data: dict, keyinfo: dict = Depends(get_api_key)):
     """Updates details for a specific entity."""
@@ -544,9 +539,9 @@ def health_check():
     # Test database connection
     try:
         if DB_AVAILABLE == True or DB_AVAILABLE == "SQLITE":
-            # Use our new pooled query function
+            # Use our imported execute_query function instead of execute_pooled_query
             start_time = time.time()
-            execute_pooled_query("SELECT 1")
+            execute_query("SELECT 1")
             query_time = time.time() - start_time
             
             health_info["database"]["connection"] = "connected"
@@ -606,20 +601,16 @@ def test_admin_keys():
 def get_settings(key_info: dict = Depends(get_api_key)):
     """Returns dashboard settings from the database."""
     try:
-        conn = get_pg_connection()
-        if not conn:
-            raise Exception("Failed to connect to database")
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor()
+        
+            # Get settings from database
+            cursor.execute("""
+                SELECT * FROM system_settings 
+                WHERE id = 1
+            """)
             
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
-        # Get settings from database
-        cursor.execute("""
-            SELECT * FROM system_settings 
-            WHERE id = 1
-        """)
-        
-        settings = cursor.fetchone()
-        conn.close()
+            settings = cursor.fetchone()
         
         # If no settings found, create default settings
         if not settings:
@@ -659,7 +650,7 @@ def get_settings(key_info: dict = Depends(get_api_key)):
             "refreshInterval": 0,
             "publicDashboard": True,
         }
-
+    
 @app.get("/api/compare")
 def compare_entities(
     entities: str,  # Comma-separated list of entity names
@@ -792,114 +783,110 @@ def compare_entities(
 def save_settings(settings: dict, key_info: dict = Depends(get_api_key)):
     """Saves dashboard settings to the database."""
     try:
-        conn = get_pg_connection()
-        if not conn:
-            raise Exception("Failed to connect to database")
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor()
+        
+            # Check if settings table exists, create it if not
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_settings (
+                    id INTEGER PRIMARY KEY,
+                    dashboardTitle TEXT,
+                    featuredEntities TEXT,
+                    defaultTimeframe TEXT,
+                    enableRodmnScore BOOLEAN,
+                    enableSentimentAnalysis BOOLEAN,
+                    enableTalkTimeMetric BOOLEAN,
+                    enableWikipediaViews BOOLEAN,
+                    enableRedditMentions BOOLEAN,
+                    enableGoogleTrends BOOLEAN,
+                    minEntityDisplayCount INTEGER,
+                    maxEntityDisplayCount INTEGER,
+                    refreshInterval INTEGER,
+                    publicDashboard BOOLEAN,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             
-        cursor = conn.cursor()
-        
-        # Check if settings table exists, create it if not
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS system_settings (
-                id INTEGER PRIMARY KEY,
-                dashboardTitle TEXT,
-                featuredEntities TEXT,
-                defaultTimeframe TEXT,
-                enableRodmnScore BOOLEAN,
-                enableSentimentAnalysis BOOLEAN,
-                enableTalkTimeMetric BOOLEAN,
-                enableWikipediaViews BOOLEAN,
-                enableRedditMentions BOOLEAN,
-                enableGoogleTrends BOOLEAN,
-                minEntityDisplayCount INTEGER,
-                maxEntityDisplayCount INTEGER,
-                refreshInterval INTEGER,
-                publicDashboard BOOLEAN,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Check if settings already exist
-        cursor.execute("SELECT id FROM system_settings WHERE id = 1")
-        exists = cursor.fetchone()
-        
-        if exists:
-            # Update existing settings
-            cursor.execute("""
-                UPDATE system_settings SET
-                    dashboardTitle = %s,
-                    featuredEntities = %s,
-                    defaultTimeframe = %s,
-                    enableRodmnScore = %s,
-                    enableSentimentAnalysis = %s,
-                    enableTalkTimeMetric = %s,
-                    enableWikipediaViews = %s,
-                    enableRedditMentions = %s,
-                    enableGoogleTrends = %s,
-                    minEntityDisplayCount = %s,
-                    maxEntityDisplayCount = %s,
-                    refreshInterval = %s,
-                    publicDashboard = %s,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = 1
-            """, (
-                settings.get("dashboardTitle", "HYPE Analytics Dashboard"),
-                settings.get("featuredEntities", ""),
-                settings.get("defaultTimeframe", "last_30_days"),
-                settings.get("enableRodmnScore", True),
-                settings.get("enableSentimentAnalysis", True),
-                settings.get("enableTalkTimeMetric", True),
-                settings.get("enableWikipediaViews", True),
-                settings.get("enableRedditMentions", True),
-                settings.get("enableGoogleTrends", True),
-                settings.get("minEntityDisplayCount", 5),
-                settings.get("maxEntityDisplayCount", 10),
-                settings.get("refreshInterval", 0),
-                settings.get("publicDashboard", True)
-            ))
-        else:
-            # Insert new settings
-            cursor.execute("""
-                INSERT INTO system_settings (
-                    id,
-                    dashboardTitle,
-                    featuredEntities,
-                    defaultTimeframe,
-                    enableRodmnScore,
-                    enableSentimentAnalysis,
-                    enableTalkTimeMetric,
-                    enableWikipediaViews,
-                    enableRedditMentions,
-                    enableGoogleTrends,
-                    minEntityDisplayCount,
-                    maxEntityDisplayCount,
-                    refreshInterval,
-                    publicDashboard
-                ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                settings.get("dashboardTitle", "HYPE Analytics Dashboard"),
-                settings.get("featuredEntities", ""),
-                settings.get("defaultTimeframe", "last_30_days"),
-                settings.get("enableRodmnScore", True),
-                settings.get("enableSentimentAnalysis", True),
-                settings.get("enableTalkTimeMetric", True),
-                settings.get("enableWikipediaViews", True),
-                settings.get("enableRedditMentions", True),
-                settings.get("enableGoogleTrends", True),
-                settings.get("minEntityDisplayCount", 5),
-                settings.get("maxEntityDisplayCount", 10),
-                settings.get("refreshInterval", 0),
-                settings.get("publicDashboard", True)
-            ))
-        
-        conn.commit()
-        conn.close()
+            # Check if settings already exist
+            cursor.execute("SELECT id FROM system_settings WHERE id = 1")
+            exists = cursor.fetchone()
+            
+            if exists:
+                # Update existing settings
+                cursor.execute("""
+                    UPDATE system_settings SET
+                        dashboardTitle = %s,
+                        featuredEntities = %s,
+                        defaultTimeframe = %s,
+                        enableRodmnScore = %s,
+                        enableSentimentAnalysis = %s,
+                        enableTalkTimeMetric = %s,
+                        enableWikipediaViews = %s,
+                        enableRedditMentions = %s,
+                        enableGoogleTrends = %s,
+                        minEntityDisplayCount = %s,
+                        maxEntityDisplayCount = %s,
+                        refreshInterval = %s,
+                        publicDashboard = %s,
+                        last_updated = CURRENT_TIMESTAMP
+                    WHERE id = 1
+                """, (
+                    settings.get("dashboardTitle", "HYPE Analytics Dashboard"),
+                    settings.get("featuredEntities", ""),
+                    settings.get("defaultTimeframe", "last_30_days"),
+                    settings.get("enableRodmnScore", True),
+                    settings.get("enableSentimentAnalysis", True),
+                    settings.get("enableTalkTimeMetric", True),
+                    settings.get("enableWikipediaViews", True),
+                    settings.get("enableRedditMentions", True),
+                    settings.get("enableGoogleTrends", True),
+                    settings.get("minEntityDisplayCount", 5),
+                    settings.get("maxEntityDisplayCount", 10),
+                    settings.get("refreshInterval", 0),
+                    settings.get("publicDashboard", True)
+                ))
+            else:
+                # Insert new settings
+                cursor.execute("""
+                    INSERT INTO system_settings (
+                        id,
+                        dashboardTitle,
+                        featuredEntities,
+                        defaultTimeframe,
+                        enableRodmnScore,
+                        enableSentimentAnalysis,
+                        enableTalkTimeMetric,
+                        enableWikipediaViews,
+                        enableRedditMentions,
+                        enableGoogleTrends,
+                        minEntityDisplayCount,
+                        maxEntityDisplayCount,
+                        refreshInterval,
+                        publicDashboard
+                    ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    settings.get("dashboardTitle", "HYPE Analytics Dashboard"),
+                    settings.get("featuredEntities", ""),
+                    settings.get("defaultTimeframe", "last_30_days"),
+                    settings.get("enableRodmnScore", True),
+                    settings.get("enableSentimentAnalysis", True),
+                    settings.get("enableTalkTimeMetric", True),
+                    settings.get("enableWikipediaViews", True),
+                    settings.get("enableRedditMentions", True),
+                    settings.get("enableGoogleTrends", True),
+                    settings.get("minEntityDisplayCount", 5),
+                    settings.get("maxEntityDisplayCount", 10),
+                    settings.get("refreshInterval", 0),
+                    settings.get("publicDashboard", True)
+                ))
+            
+            conn.commit()
         
         return {"success": True, "message": "Settings saved successfully"}
     except Exception as e:
         print(f"Error saving settings: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error saving settings: {str(e)}")
-
+    
 # Import entities from JSON to database on startup
 print("\n🔄 Importing entities from JSON to database...")
 from db_wrapper import import_entities_to_database

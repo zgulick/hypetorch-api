@@ -4,6 +4,8 @@
 import os
 import json
 import time
+from db_pool import DatabaseConnection, execute_query, execute_transaction
+from db_pool import get_db_connection, return_db_connection, DatabaseConnectionPool
 from datetime import datetime
 from pathlib import Path
 from db_utils import with_retry, with_connection, transactional
@@ -79,26 +81,14 @@ def get_connection_from_pool():
 
 def execute_pooled_query(query, params=None, fetch=True):
     """Execute a database query using the connection pool"""
-    with get_connection_from_pool() as conn:
-        try:
-            if DB_AVAILABLE == True:  # PostgreSQL
-                cursor = conn.cursor()
-            else:  # SQLite
-                cursor = conn.cursor()
-                
-            cursor.execute(query, params or ())
-            
-            if fetch:
-                result = cursor.fetchall()
-            else:
-                result = None
-                
-            conn.commit()
-            return result
-        except Exception as e:
-            conn.rollback()
-            print(f"❌ Database query error: {e}")
-            raise
+    try:
+        # This uses our new execute_query function from db_pool.py
+        # which handles all the connection management internally
+        result = execute_query(query, params, fetch)
+        return result
+    except Exception as e:
+        print(f"❌ Database query error: {e}")
+        raise
 
 # Base directory for SQLite
 BASE_DIR = Path("/opt/render/project/src") if os.path.exists("/opt/render/project") else Path(".")
@@ -113,8 +103,7 @@ DB_ENVIRONMENT = os.environ.get("DB_ENVIRONMENT", "development")
 # Setup SQLite connection if needed
 def get_sqlite_connection():
     """Create a connection to the SQLite database"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # This enables column access by name
+    conn = get_db_connection()  # Get SQLite connection from the pool
     return conn
 
 def init_sqlite_db():
@@ -154,7 +143,8 @@ def init_sqlite_db():
 def get_pg_connection():
     """Create a database connection with the appropriate schema"""
     try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        # Get a connection from the pool
+        conn = get_db_connection(psycopg2.extras.RealDictCursor)
         
         # Set the search path to the appropriate schema
         with conn.cursor() as cursor:
@@ -167,6 +157,9 @@ def get_pg_connection():
         return conn
     except Exception as e:
         print(f"❌ PostgreSQL connection error: {e}")
+        # Return the connection to the pool if there was an error
+        if 'conn' in locals():
+            return_db_connection(conn)
         raise  # Re-raise so our retry decorator can catch it
 
 def init_pg_db():
@@ -178,7 +171,8 @@ def init_pg_db():
         return False
         
     try:
-        conn = get_pg_connection()
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor()
         if not conn:
             return False
             
@@ -220,10 +214,17 @@ def init_pg_db():
 # Initialize the appropriate database
 def initialize_database():
     """Initialize the database based on available modules"""
-    if DB_AVAILABLE == True:  # PostgreSQL
-        return init_pg_db()
-    elif DB_AVAILABLE == "SQLITE":  # SQLite fallback
-        return init_sqlite_db()
+    # Get the connection pool instance
+    pool = DatabaseConnectionPool.get_instance()
+    
+    # The initialization has already happened when the pool was created
+    # Just return the status of the pool
+    if pool.pg_pool is not None:
+        print("✅ PostgreSQL database initialized successfully")
+        return True
+    elif DB_AVAILABLE == "SQLITE":
+        print("✅ SQLite database initialized successfully")
+        return True
     else:
         print("⚠️ Database initialization skipped - running in file-only mode")
         return False
