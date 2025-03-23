@@ -18,7 +18,7 @@ from db_wrapper import (
     get_entities_with_data_metrics,
     get_entities_with_metadata_metrics,
 )
-
+from api import load_data  # Add this line to import the load_data function
 
 # Create v1 router
 v1_router = APIRouter(prefix="/v1")
@@ -339,6 +339,79 @@ def bulk_query_v1(
             details=str(e)
         )
 
+@v1_router.get("/entities/{entity_id}/metrics")
+def get_entity_metrics_v1(
+    entity_id: str,
+    key_info: dict = Depends(get_api_key)
+):
+    """Returns engagement metrics for a specific entity."""
+    try:
+        # Convert underscores to spaces in entity name
+        entity_name = entity_id.replace("_", " ")
+        
+        # Load data to get the metrics
+        data = load_data()
+        
+        # Create case-insensitive maps for lookups
+        mention_counts_lower = {k.lower(): v for k, v in data.get("mention_counts", {}).items()}
+        talk_time_lower = {k.lower(): v for k, v in data.get("talk_time_counts", {}).items()}
+        sentiment_lower = {k.lower(): v for k, v in data.get("player_sentiment_scores", {}).items()}
+        rodmn_lower = {k.lower(): v for k, v in data.get("rodmn_scores", {}).items()}
+        
+        # Use lowercase key for lookups
+        entity_lower = entity_name.lower()
+        
+        # Get metrics using case-insensitive keys
+        return {
+            "mentions": mention_counts_lower.get(entity_lower, 0),
+            "talk_time": talk_time_lower.get(entity_lower, 0),
+            "sentiment": sentiment_lower.get(entity_lower, []),
+            "rodmn_score": rodmn_lower.get(entity_lower, 0)
+        }
+    except Exception as e:
+        print(f"Error retrieving metrics for entity {entity_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error retrieving entity metrics: {str(e)}")
+    
+
+@v1_router.get("/entities/{entity_id}/trending")
+def get_entity_trending_v1(
+    entity_id: str,
+    key_info: dict = Depends(get_api_key)
+):
+    """Returns trending data for a specific entity."""
+    try:
+        data = load_data()
+        entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
+        
+        # Case-sensitive direct lookup
+        if entity_name in data.get("google_trends", {}):
+            return {
+                "google_trends": data.get("google_trends", {}).get(entity_name, 0),
+                "wikipedia_views": data.get("wikipedia_views", {}).get(entity_name, 0),
+                "reddit_mentions": data.get("reddit_mentions", {}).get(entity_name, 0),
+                "google_news_mentions": data.get("google_news_mentions", {}).get(entity_name, 0)
+            }
+        
+        # Case-insensitive lookup (fallback)
+        for key in data.get("google_trends", {}):
+            if key.lower() == entity_name.lower():
+                return {
+                    "google_trends": data.get("google_trends", {}).get(key, 0),
+                    "wikipedia_views": data.get("wikipedia_views", {}).get(key, 0),
+                    "reddit_mentions": data.get("reddit_mentions", {}).get(key, 0),
+                    "google_news_mentions": data.get("google_news_mentions", {}).get(key, 0)
+                }
+        
+        # If we get here, return zeros rather than an error
+        return {
+            "google_trends": 0,
+            "wikipedia_views": 0,
+            "reddit_mentions": 0,
+            "google_news_mentions": 0
+        }
+    except Exception as e:
+        print(f"Error retrieving trending data for entity {entity_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error retrieving entity trending data: {str(e)}")
 
 router = APIRouter()
 
