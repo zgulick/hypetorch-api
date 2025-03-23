@@ -9,6 +9,9 @@ import queue
 # Import db_config
 from db_config import get_db_settings
 
+# Make sqlite3 available in the module scope
+sqlite3 = None
+
 # Try to import PostgreSQL driver, fall back to SQLite if unavailable
 try:
     import psycopg2
@@ -17,7 +20,10 @@ try:
     POSTGRESQL_AVAILABLE = True
 except ImportError:
     POSTGRESQL_AVAILABLE = False
-    import sqlite3
+    try:
+        import sqlite3
+    except ImportError:
+        pass  # Handle this case later
 
 # Set up logging
 logging.basicConfig(
@@ -144,11 +150,11 @@ class DatabaseConnectionPool:
     def get_connection(self, cursor_factory=None):
         """
         Get a database connection from the pool.
-    
+
         Args:
             cursor_factory: Optional factory to use when creating cursors
-                       (only applicable for PostgreSQL)
-    
+                   (only applicable for PostgreSQL)
+
         Returns:
             A database connection
         """
@@ -156,17 +162,17 @@ class DatabaseConnectionPool:
             try:
                 # Get connection from PostgreSQL pool
                 conn = self.pg_pool.getconn(key=threading.get_ident())
-            
-                # If this is the first time getting this connection, set cursor factory
+        
+                # Don't try to set _cursor_factory as an attribute directly
+                # Just store it for use when creating cursors
                 if cursor_factory:
-                    # Store the cursor factory directly as an attribute
-                    conn._cursor_factory = cursor_factory
-            
+                    self._temp_cursor_factory = cursor_factory
+        
                 # Check if connection is still alive
                 cursor = conn.cursor()
                 cursor.execute("SELECT 1")
                 cursor.close()
-            
+        
                 logger.debug("Retrieved PostgreSQL connection from pool")
                 return conn
             except Exception as e:
@@ -176,7 +182,7 @@ class DatabaseConnectionPool:
                         self.pg_pool.putconn(conn)
                     except:
                         pass
-            
+        
                 # Fall back to SQLite if PostgreSQL fails
                 logger.warning("Falling back to SQLite after PostgreSQL connection failure")
                 return self._get_sqlite_connection()
@@ -186,8 +192,13 @@ class DatabaseConnectionPool:
     
     def _get_sqlite_connection(self):
         """Get a SQLite connection for the current thread."""
-        thread_id = threading.get_ident()
+        # Check if sqlite3 is available
+        if sqlite3 is None:
+            logger.error("SQLite is not available as a fallback. No database connection possible.")
+            raise ImportError("Neither PostgreSQL nor SQLite are available")
         
+        thread_id = threading.get_ident()
+    
         with self._lock:
             # Check if we already have a connection for this thread
             if thread_id in self.sqlite_connections:
@@ -334,12 +345,15 @@ def execute_query(query, params=None, fetch=True, cursor_factory=None):
     """
     with DatabaseConnection(cursor_factory) as conn:
         if POSTGRESQL_AVAILABLE and hasattr(conn, 'cursor') and callable(conn.cursor):
+            # Get the cursor with the right factory if specified
             if cursor_factory:
-                cursor = conn.cursor(cursor_factory=cursor_factory)
+                try:
+                    cursor = conn.cursor(cursor_factory=cursor_factory)
+                except TypeError:
+                    # If cursor_factory param doesn't work, fall back to standard cursor
+                    cursor = conn.cursor()
             else:
-                # Use the cursor factory stored on the connection if available
-                factory = getattr(conn, '_cursor_factory', None)
-                cursor = conn.cursor(cursor_factory=factory)
+                cursor = conn.cursor()
         else:
             cursor = conn.cursor()
         
