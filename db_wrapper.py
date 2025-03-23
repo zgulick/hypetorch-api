@@ -17,7 +17,8 @@ import traceback
 from db_config import get_db_settings, POSTGRESQL_AVAILABLE, DB_ENVIRONMENT
 SCHEMA_PREFIX = f"{DB_ENVIRONMENT}." if POSTGRESQL_AVAILABLE is True else ""
 from db_pool import SQLITE_AVAILABLE
-
+from db_pool import db_pool  # ✅ Import the shared pool
+from psycopg2.extras import RealDictCursor
 
 # Flag to track if database functionality is available
 DB_AVAILABLE = False
@@ -114,7 +115,7 @@ def get_sqlite_connection():
 def init_sqlite_db():
     """Initialize the SQLite database with required tables"""
     conn = get_sqlite_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS entities (
@@ -163,7 +164,7 @@ def get_pg_connection():
         conn = get_db_connection(psycopg2.extras.RealDictCursor)
         
         # Set the search path to the appropriate schema
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         try:
             # Create schema if it doesn't exist
             cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_ENVIRONMENT}")
@@ -354,7 +355,7 @@ def save_json_data(data):
         timestamp = datetime.now().isoformat()
         
         if DB_AVAILABLE == True:  # PostgreSQL
-            conn = get_pg_connection()
+            conn = db_pool.getconn()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
                 
@@ -564,11 +565,11 @@ def save_entity_history_sqlite(cursor, data, timestamp):
     print(f"✅ Saved history for {len(hype_scores)} entities to SQLite")
 
 from psycopg2.extras import RealDictCursor
-from db_pool import get_pg_connection
+
 
 def get_entities_with_status_metrics():
-    with get_pg_connection(cursor_factory=RealDictCursor) as conn:
-        cursor = conn.cursor()
+    with db_pool.getconn() as conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
             SELECT name, talk_time, mentions, sentiment
             FROM hype_data_flat
@@ -576,8 +577,8 @@ def get_entities_with_status_metrics():
         return cursor.fetchall()
 
 def get_entities_with_data_metrics():
-    with get_pg_connection(cursor_factory=RealDictCursor) as conn:
-        cursor = conn.cursor()
+    with db_pool.getconn() as conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
             SELECT name, google_trends, wikipedia_views, reddit_mentions
             FROM hype_data_flat
@@ -585,8 +586,8 @@ def get_entities_with_data_metrics():
         return cursor.fetchall()
 
 def get_entities_with_metadata_metrics():
-    with get_pg_connection(cursor_factory=RealDictCursor) as conn:
-        cursor = conn.cursor()
+    with db_pool.getconn() as conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
             SELECT name, hype_score, rodmn_score
             FROM hype_data_flat
@@ -600,7 +601,7 @@ def get_latest_data():
     """Retrieve the most recent data from the database"""
     try:
         if DB_AVAILABLE == True:  # PostgreSQL
-            conn = get_pg_connection()
+            conn = db_pool.getconn()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
                 
@@ -666,7 +667,7 @@ def get_entity_history(entity_name, limit=10):
     """Get historical data for a specific entity"""
     try:
         if DB_AVAILABLE == True:  # PostgreSQL
-            conn = get_pg_connection()
+            conn = db_pool.getconn()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
                 
@@ -734,40 +735,35 @@ def get_entity_history(entity_name, limit=10):
 def add_rodmn_column():
     """Add the rodmn_score column to entity_history table if it doesn't exist."""
     print("Checking for rodmn_score column in entity_history table...")
-    conn = get_pg_connection()
+    conn = db_pool.getconn()
     if not conn:
         print("❌ Failed to connect to PostgreSQL database")
         return False
-        
+
     try:
         with conn.cursor() as cursor:
-            # Check if column exists
             cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='entity_history' AND column_name='rodmn_score'
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='entity_history' AND column_name='rodmn_score'
             """)
-            
             if not cursor.fetchone():
                 print("Adding rodmn_score column to entity_history table...")
                 cursor.execute("""
-                ALTER TABLE entity_history 
-                ADD COLUMN rodmn_score REAL
+                    ALTER TABLE entity_history 
+                    ADD COLUMN rodmn_score REAL
                 """)
-                
                 conn.commit()
                 print("✅ Successfully added rodmn_score column")
             else:
                 print("✅ rodmn_score column already exists")
-                
-        conn.close()
         return True
     except Exception as e:
         print(f"❌ Error adding column: {e}")
-        if conn:
-            conn.rollback()
-            conn.close()
+        conn.rollback()
         return False
+    finally:
+        conn.close()
 
 @with_connection(get_pg_connection)
 @transactional
@@ -925,7 +921,7 @@ def save_entity_history_sqlite(cursor, data, timestamp):
 def update_entity(entity_name, entity_data):
     try:
         # Connect to database
-        conn = get_pg_connection()
+        conn = db_pool.getconn()
         cursor = conn.cursor()
         
         # Start a transaction
@@ -1039,7 +1035,7 @@ def create_entity(entity_data):
             return False, "Invalid entity type. Must be 'person' or 'non-person'"
         
         if DB_AVAILABLE == True:  # PostgreSQL
-            conn = get_pg_connection()
+            conn = db_pool.getconn()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
             
@@ -1093,7 +1089,7 @@ def delete_entity(entity_name):
     """
     try:
         if DB_AVAILABLE == True:  # PostgreSQL
-            conn = get_pg_connection()
+            conn = db_pool.getconn()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
             
@@ -1152,7 +1148,7 @@ def import_entities_to_database():
 
         # Connect to database
         if DB_AVAILABLE is True:  # PostgreSQL
-            conn = get_pg_connection()
+            conn = db_pool.getconn()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
 
@@ -1203,7 +1199,7 @@ def export_entities_to_json():
     """Export all entities from database to entities.json files"""
     try:
         if DB_AVAILABLE == True:  # PostgreSQL
-            conn = get_pg_connection()
+            conn = db_pool.getconn()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
                 
