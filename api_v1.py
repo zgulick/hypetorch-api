@@ -18,7 +18,6 @@ from db_wrapper import (
     get_entities_with_data_metrics,
     get_entities_with_metadata_metrics,
 )
-from api import load_data  # Add this line to import the load_data function
 
 # Create v1 router
 v1_router = APIRouter(prefix="/v1")
@@ -350,7 +349,7 @@ def get_entity_metrics_v1(
         entity_name = entity_id.replace("_", " ")
         
         # Load data to get the metrics
-        data = load_data()
+        data = load_latest_data()
         
         # Create case-insensitive maps for lookups
         mention_counts_lower = {k.lower(): v for k, v in data.get("mention_counts", {}).items()}
@@ -380,7 +379,7 @@ def get_entity_trending_v1(
 ):
     """Returns trending data for a specific entity."""
     try:
-        data = load_data()
+        data = load_latest_data()
         entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
         
         # Case-sensitive direct lookup
