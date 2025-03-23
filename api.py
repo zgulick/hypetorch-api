@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import time
 import traceback
 import psycopg2
-from psycopg2 import extras
+from psycopg2.extras import RealDictCursor
 # Import our new database functions
 from db_wrapper import initialize_database, DB_AVAILABLE, add_rodmn_column, execute_pooled_query, update_entity, create_entity, delete_entity, import_entities_to_database
 from db_operations import save_all_data, load_latest_data, get_entity_history_data
@@ -185,7 +185,7 @@ def load_data(entity_id=None):
     """Load data with optional entity filtering."""
     try:
         # Connect to database
-        with DatabaseConnection() as conn:
+        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
             cursor = conn.cursor()
             
             # Get the correct schema from config
@@ -285,7 +285,7 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
         entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
         
         # Connect directly to database
-        with DatabaseConnection() as conn:
+        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
             cursor = conn.cursor()
             
             # Fetch entity with exact and case-insensitive match
@@ -825,7 +825,7 @@ def get_rate_limits(key_info: dict = Depends(get_api_key)):
     # Example of how you might get all API keys
     all_clients = []
     try:
-        with DatabaseConnection() as conn:
+        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT key_hash, client_name FROM api_keys WHERE is_active = TRUE")
             all_clients = cursor.fetchall()
@@ -865,7 +865,7 @@ def test_admin_keys():
 def get_settings(key_info: dict = Depends(get_api_key)):
     """Returns dashboard settings from the database."""
     try:
-        with DatabaseConnection() as conn:
+        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
             cursor = conn.cursor()
         
             # Get settings from database
@@ -1047,7 +1047,7 @@ def compare_entities(
 def save_settings(settings: dict, key_info: dict = Depends(get_api_key)):
     """Saves dashboard settings to the database."""
     try:
-        with DatabaseConnection() as conn:
+        with DatabaseConnection(cursor_factory=RealDictCursor) as conn:
             cursor = conn.cursor()
         
             # Check if settings table exists, create it if not

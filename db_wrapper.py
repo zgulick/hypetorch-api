@@ -189,7 +189,7 @@ def init_pg_db():
         return False
         
     try:
-        with DatabaseConnection() as conn:
+        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
             cursor = conn.cursor()
         if not conn:
             return False
@@ -241,7 +241,7 @@ def initialize_database():
     if DB_AVAILABLE is True:
         try:
             # Get a connection with the right schema
-            with DatabaseConnection() as conn:
+            with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
                 cursor = conn.cursor()
                 
                 # Get DB_ENVIRONMENT from config
@@ -423,7 +423,7 @@ def get_entity_metrics_batch(entity_ids, metrics=None):
     result = {metric: {} for metric in metrics}
     
     try:
-        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
             cursor = conn.cursor()
             
             # Convert list to tuple for SQL IN clause
@@ -583,7 +583,10 @@ def get_latest_data():
             conn.close()
             
             if result:
-                return json.loads(result['data_json'])
+                if isinstance(result, dict):
+                    return json.loads(result['data_json'])
+                elif isinstance(result, tuple):
+                    return json.loads(result[0])
                 
         elif DB_AVAILABLE == "SQLITE":  # SQLite fallback
             conn = get_sqlite_connection()
@@ -597,7 +600,10 @@ def get_latest_data():
             conn.close()
             
             if result:
-                return json.loads(result['data_json'])
+                if isinstance(result, dict):
+                    return json.loads(result['data_json'])
+                elif isinstance(result, tuple):
+                    return json.loads(result[0])
         
         # Try file as fallback
         try:
