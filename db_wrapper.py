@@ -583,10 +583,14 @@ def get_latest_data():
             conn.close()
             
             if result:
-                if isinstance(result, dict):
-                    return json.loads(result['data_json'])
-                elif isinstance(result, tuple):
-                    return json.loads(result[0])
+                try:
+                    return json.loads(result['data_json'])  # Try dictionary-style access
+                except (TypeError, KeyError):
+                    try:
+                        return json.loads(result[0])  # Fallback to tuple-style
+                    except Exception as e:
+                        print(f"❌ Could not load data_json from result: {e}")
+                        return {}
                 
         elif DB_AVAILABLE == "SQLITE":  # SQLite fallback
             conn = get_sqlite_connection()
@@ -600,10 +604,14 @@ def get_latest_data():
             conn.close()
             
             if result:
-                if isinstance(result, dict):
-                    return json.loads(result['data_json'])
-                elif isinstance(result, tuple):
-                    return json.loads(result[0])
+                try:
+                    return json.loads(result['data_json'])  # Try dictionary-style access
+                except (TypeError, KeyError):
+                    try:
+                        return json.loads(result[0])  # Fallback to tuple-style
+                    except Exception as e:
+                        print(f"❌ Could not load data_json from result: {e}")
+                        return {}
         
         # Try file as fallback
         try:
