@@ -17,7 +17,7 @@ import traceback
 from db_config import get_db_settings, POSTGRESQL_AVAILABLE, DB_ENVIRONMENT
 SCHEMA_PREFIX = f"{DB_ENVIRONMENT}." if POSTGRESQL_AVAILABLE is True else ""
 from db_pool import SQLITE_AVAILABLE
-from db_pool import db_pool  # ✅ Import the shared pool
+from db_pool import DatabaseConnectionPool
 from psycopg2.extras import RealDictCursor
 
 # Flag to track if database functionality is available
@@ -36,6 +36,8 @@ except ImportError:
         DB_AVAILABLE = "SQLITE"
     except ImportError:
         print("⚠️ WARNING: Neither PostgreSQL nor SQLite available - running in file-only mode")
+
+db_pool = DatabaseConnectionPool.get_instance()
 
 class ConnectionPool:
     _instance = None
