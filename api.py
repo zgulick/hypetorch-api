@@ -188,11 +188,14 @@ def load_data(entity_id=None):
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
             cursor = conn.cursor()
             
+            # Get the correct schema from config
+            db_env = os.environ.get("DB_ENVIRONMENT", "development")
+            
             # Get entities with optional filter
             if entity_id:
-                cursor.execute("SELECT id, name, type, category, subcategory FROM entities WHERE name = %s", (entity_id,))
+                cursor.execute(f"SELECT id, name, type, category, subcategory FROM {db_env}.entities WHERE name = %s", (entity_id,))
             else:
-                cursor.execute("SELECT id, name, type, category, subcategory FROM entities")
+                cursor.execute(f"SELECT id, name, type, category, subcategory FROM {db_env}.entities")
             
             entities = cursor.fetchall()
             

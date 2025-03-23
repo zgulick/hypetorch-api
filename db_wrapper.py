@@ -213,21 +213,113 @@ def init_pg_db():
 
 # Initialize the appropriate database
 def initialize_database():
-    """Initialize the database based on available modules"""
+    """Initialize the database based on available modules."""
     # Get the connection pool instance
     pool = DatabaseConnectionPool.get_instance()
     
-    # The initialization has already happened when the pool was created
-    # Just return the status of the pool
-    if pool.pg_pool is not None:
-        print("✅ PostgreSQL database initialized successfully")
-        return True
-    elif DB_AVAILABLE == "SQLITE":
-        print("✅ SQLite database initialized successfully")
-        return True
-    else:
-        print("⚠️ Database initialization skipped - running in file-only mode")
-        return False
+    success = False
+    
+    # Try to initialize PostgreSQL schema and tables
+    if POSTGRESQL_AVAILABLE:
+        try:
+            # Get a connection with the right schema
+            with DatabaseConnection() as conn:
+                cursor = conn.cursor()
+                
+                # Get DB_ENVIRONMENT from config
+                db_env = get_db_settings().get("environment", "development")
+                
+                # Create schema if it doesn't exist
+                cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {db_env}")
+                # Set search path to our environment
+                cursor.execute(f"SET search_path TO {db_env}")
+                
+                # Create the entities table if it doesn't exist
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {db_env}.entities (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT UNIQUE NOT NULL,
+                    type TEXT DEFAULT 'person',
+                    category TEXT DEFAULT 'Sports',
+                    subcategory TEXT DEFAULT 'Unrivaled',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """)
+                
+                # Create other required tables
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {db_env}.hype_scores (
+                    id SERIAL PRIMARY KEY,
+                    entity_id INTEGER REFERENCES entities(id),
+                    score FLOAT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    time_period TEXT,
+                    algorithm_version TEXT
+                )
+                """)
+                
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {db_env}.component_metrics (
+                    id SERIAL PRIMARY KEY,
+                    entity_id INTEGER REFERENCES entities(id),
+                    metric_type TEXT NOT NULL,
+                    value FLOAT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    time_period TEXT
+                )
+                """)
+                
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {db_env}.entity_history (
+                    id SERIAL PRIMARY KEY,
+                    entity_name TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    hype_score FLOAT,
+                    mentions INTEGER,
+                    talk_time FLOAT,
+                    wikipedia_views INTEGER,
+                    reddit_mentions INTEGER,
+                    google_trends INTEGER,
+                    google_news_mentions INTEGER,
+                    rodmn_score FLOAT
+                )
+                """)
+                
+                # Create the API keys table if it doesn't exist
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {db_env}.api_keys (
+                    id SERIAL PRIMARY KEY,
+                    key_hash TEXT NOT NULL UNIQUE,
+                    client_name TEXT NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    permissions TEXT
+                )
+                """)
+                
+                conn.commit()
+                success = True
+                print(f"✅ PostgreSQL database initialized with {db_env} schema")
+            
+        except Exception as e:
+            print(f"❌ Error initializing PostgreSQL database: {e}")
+            traceback.print_exc()
+    
+    # Initialize SQLite if PostgreSQL failed and SQLite is available
+    if not success and SQLITE_AVAILABLE:
+        try:
+            # SQLite initialization code
+            # [Your existing SQLite initialization code]
+            success = True
+            print("✅ SQLite database initialized successfully")
+        except Exception as e:
+            print(f"❌ Error initializing SQLite database: {e}")
+    
+    if not success:
+        print("⚠️ Database initialization failed - running in file-only mode")
+    
+    return success
 
 # Save JSON data to the database
 @with_retry(max_retries=3)

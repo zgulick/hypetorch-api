@@ -9,7 +9,7 @@ import queue
 # Import db_config
 from db_config import get_db_settings
 
-# Make sqlite3 available in the module scope
+# Make sqlite3 available in the module scope even before import
 sqlite3 = None
 
 # Try to import PostgreSQL driver, fall back to SQLite if unavailable
@@ -20,10 +20,13 @@ try:
     POSTGRESQL_AVAILABLE = True
 except ImportError:
     POSTGRESQL_AVAILABLE = False
-    try:
-        import sqlite3
-    except ImportError:
-        pass  # Handle this case later
+    
+# Always try to import sqlite3, regardless of whether PostgreSQL is available
+try:
+    import sqlite3
+    SQLITE_AVAILABLE = True
+except ImportError:
+    SQLITE_AVAILABLE = False
 
 # Set up logging
 logging.basicConfig(
@@ -153,7 +156,7 @@ class DatabaseConnectionPool:
 
         Args:
             cursor_factory: Optional factory to use when creating cursors
-                   (only applicable for PostgreSQL)
+                    (only applicable for PostgreSQL)
 
         Returns:
             A database connection
@@ -162,27 +165,32 @@ class DatabaseConnectionPool:
             try:
                 # Get connection from PostgreSQL pool
                 conn = self.pg_pool.getconn(key=threading.get_ident())
-        
-                # Don't try to set _cursor_factory as an attribute directly
-                # Just store it for use when creating cursors
-                if cursor_factory:
-                    self._temp_cursor_factory = cursor_factory
-        
-                # Check if connection is still alive
-                cursor = conn.cursor()
-                cursor.execute("SELECT 1")
-                cursor.close()
-        
+            
+                # Check if we actually got a connection
+                if conn is None:
+                    raise Exception("Failed to get a connection from the pool")
+            
+                # Make sure we're using the right schema
+                with conn.cursor() as cursor:
+                    # Get DB_ENVIRONMENT from config
+                    db_env = get_db_settings().get("environment", "development")
+                    # Create schema if it doesn't exist
+                    cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {db_env}")
+                    # Set search path to our environment
+                    cursor.execute(f"SET search_path TO {db_env}")
+            
+                # Don't close the cursor or commit here - just return the connection
                 logger.debug("Retrieved PostgreSQL connection from pool")
                 return conn
+            
             except Exception as e:
                 logger.error(f"Error getting PostgreSQL connection: {e}")
-                if 'conn' in locals():
+                if 'conn' in locals() and conn is not None:
                     try:
                         self.pg_pool.putconn(conn)
                     except:
                         pass
-        
+            
                 # Fall back to SQLite if PostgreSQL fails
                 logger.warning("Falling back to SQLite after PostgreSQL connection failure")
                 return self._get_sqlite_connection()
@@ -193,10 +201,33 @@ class DatabaseConnectionPool:
     def _get_sqlite_connection(self):
         """Get a SQLite connection for the current thread."""
         # Check if sqlite3 is available
-        if sqlite3 is None:
-            logger.error("SQLite is not available as a fallback. No database connection possible.")
-            raise ImportError("Neither PostgreSQL nor SQLite are available")
+        global sqlite3
+        if sqlite3 is None or not SQLITE_AVAILABLE:
+            logger.error("SQLite is not available as a fallback. Using file-only mode.")
+            # Return a dummy connection object
+            class DummyConnection:
+                def cursor(self):
+                    return DummyCursor()
+                def commit(self):
+                    pass
+                def rollback(self):
+                    pass
+                def close(self):
+                    pass
         
+            class DummyCursor:
+                def execute(self, query, params=None):
+                    logger.warning(f"Dummy cursor executing query: {query}")
+                    raise Exception("No database available")
+                def fetchall(self):
+                    return []
+                def fetchone(self):
+                    return None
+                def close(self):
+                    pass
+        
+            return DummyConnection()
+    
         thread_id = threading.get_ident()
     
         with self._lock:
