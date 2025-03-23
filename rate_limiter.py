@@ -27,6 +27,7 @@ class RateLimiter:
             # Format: "endpoint_path": {"requests_per_minute": X, "requests_per_hour": Y}
             "/api/bulk": {"requests_per_minute": 30, "requests_per_hour": 500},
             "/api/upload_json": {"requests_per_minute": 10, "requests_per_hour": 100},
+            "/api/v1/bulk": {"requests_per_minute": 30, "requests_per_hour": 500},
         }
     
     def check_rate_limit(self, client_id: str, endpoint: str, current_time: Optional[float] = None) -> Tuple[bool, Dict]:

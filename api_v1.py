@@ -6,9 +6,11 @@ import json
 
 from api_utils import StandardResponse
 from auth_middleware import get_api_key
-from db_wrapper import get_db_connection, DatabaseConnection
+from db_wrapper import get_db_connection, DatabaseConnection, get_entity_metrics_batch
 import psycopg2
 from db_operations import save_all_data, load_latest_data
+from api_models import BulkEntityQuery
+from db_historical import get_entity_history
 
 # Create v1 router
 v1_router = APIRouter(prefix="/v1")
@@ -219,3 +221,112 @@ def get_entity_details_v1(
         )
 
 # Add more versioned endpoints following this pattern
+@v1_router.post("/bulk")
+def bulk_query_v1(
+    query: BulkEntityQuery, 
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Bulk fetch data for multiple entities in one request.
+    """
+    start_time = time.time()
+    try:
+        # Prepare list of entity names (case-insensitive match)
+        names = [name.lower() for name in query.entities]
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor()
+            # Build a parameter list for SQL IN clause (e.g., "%s, %s, %s")
+            placeholders = ", ".join(["%s"] * len(names))
+            cursor.execute(
+                f"SELECT id, name, type, category, subcategory FROM entities "
+                f"WHERE LOWER(name) IN ({placeholders})",
+                names
+            )
+            entities = cursor.fetchall()
+        
+        if not entities:
+            # No matching entities found at all
+            return StandardResponse.error(
+                message="No entities found for the given names",
+                status_code=404
+            )
+        
+        # Determine if any requested names were not found
+        found_names = {e["name"].lower() for e in entities}
+        missing = [name for name in names if name not in found_names]
+        if missing:
+            return StandardResponse.error(
+                message=f"Entities not found: {', '.join(missing)}",
+                status_code=404
+            )
+        
+        # Collect IDs and prepare output structure
+        entity_ids = [e["id"] for e in entities]
+        results = []
+        
+        # Fetch latest metrics for these entities (hype_score, mentions, etc.)
+        metrics_request = None
+        if query.metrics:
+            # Map high-level metric names to internal keys if needed
+            metrics_request = []
+            for metric in query.metrics:
+                if metric == "mentions":
+                    metrics_request.append("mention_counts")
+                elif metric == "talk_time":
+                    metrics_request.append("talk_time_counts")
+                else:
+                    metrics_request.append(metric)
+        # Execute batch metrics query (None means get default set of metrics)
+        metrics_data = get_entity_metrics_batch(entity_ids, metrics=metrics_request)
+        
+        # Build each entity's response data
+        for e in entities:
+            entity_name = e["name"]
+            item = {
+                "id": e["id"],
+                "name": entity_name,
+                "type": e["type"],
+                "category": e["category"],
+                "subcategory": e["subcategory"]
+            }
+            # Include metrics values if any were fetched
+            if metrics_data:
+                item["metrics"] = {}
+                for metric_key, values in metrics_data.items():
+                    # Map internal keys back to API-friendly names
+                    key_name = metric_key
+                    if key_name == "mention_counts":
+                        key_name = "mentions"
+                    if key_name == "talk_time_counts":
+                        key_name = "talk_time"
+                    if entity_name in values:
+                        # Include the value (and optionally timestamp if needed)
+                        item["metrics"][key_name] = {
+                            "value": values[entity_name]
+                        }
+            # Include historical data if requested
+            if query.include_history:
+                history_limit = query.history_limit or 30
+                item["history"] = {
+                    "hype_score": get_entity_history(entity_name, history_limit)
+                }
+            results.append(item)
+        
+        # Compute response time
+        processing_ms = (time.time() - start_time) * 1000
+        return StandardResponse.success(
+            data=results,
+            metadata={
+                "processing_time_ms": round(processing_ms, 2),
+                "entity_count": len(results),
+                "metrics_included": query.metrics or "default",
+                "include_history": query.include_history
+            }
+        )
+    except Exception as e:
+        print(f"Error in bulk_query_v1: {e}")
+        return StandardResponse.error(
+            message="Failed to retrieve bulk entity data",
+            status_code=500,
+            details=str(e)
+        )
