@@ -189,7 +189,7 @@ def init_pg_db():
         return False
         
     try:
-        with DatabaseConnection() as conn:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
         if not conn:
             return False
@@ -241,7 +241,7 @@ def initialize_database():
     if DB_AVAILABLE is True:
         try:
             # Get a connection with the right schema
-            with DatabaseConnection() as conn:
+            with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 
                 # Get DB_ENVIRONMENT from config
@@ -423,7 +423,7 @@ def get_entity_metrics_batch(entity_ids, metrics=None):
     result = {metric: {} for metric in metrics}
     
     try:
-        with DatabaseConnection() as conn:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             
             # Convert list to tuple for SQL IN clause

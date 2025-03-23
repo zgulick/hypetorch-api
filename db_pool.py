@@ -412,7 +412,7 @@ def execute_transaction(queries):
     Returns:
         True if successful, False otherwise
     """
-    with DatabaseConnection() as conn:
+    with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
         cursor = conn.cursor()
         try:
             for query, params in queries:
