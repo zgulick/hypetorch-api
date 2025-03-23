@@ -563,6 +563,37 @@ def save_entity_history_sqlite(cursor, data, timestamp):
         )
     print(f"✅ Saved history for {len(hype_scores)} entities to SQLite")
 
+from psycopg2.extras import RealDictCursor
+from db_pool import get_pg_connection
+
+def get_entities_with_status_metrics():
+    with get_pg_connection(cursor_factory=RealDictCursor) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT name, talk_time, mentions, sentiment
+            FROM hype_data_flat
+        """)
+        return cursor.fetchall()
+
+def get_entities_with_data_metrics():
+    with get_pg_connection(cursor_factory=RealDictCursor) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT name, google_trends, wikipedia_views, reddit_mentions
+            FROM hype_data_flat
+        """)
+        return cursor.fetchall()
+
+def get_entities_with_metadata_metrics():
+    with get_pg_connection(cursor_factory=RealDictCursor) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT name, hype_score, rodmn_score
+            FROM hype_data_flat
+        """)
+        return cursor.fetchall()
+
+
 # Get latest data from the database
 @with_retry(max_retries=3)
 def get_latest_data():
