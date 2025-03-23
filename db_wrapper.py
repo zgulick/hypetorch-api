@@ -13,6 +13,8 @@ import threading
 from contextlib import contextmanager
 import requests
 import base64
+import traceback
+from db_config import get_db_settings
 
 # Flag to track if database functionality is available
 DB_AVAILABLE = False
@@ -220,7 +222,7 @@ def initialize_database():
     success = False
     
     # Try to initialize PostgreSQL schema and tables
-    if POSTGRESQL_AVAILABLE:
+    if DB_AVAILABLE is True:
         try:
             # Get a connection with the right schema
             with DatabaseConnection() as conn:
@@ -307,7 +309,7 @@ def initialize_database():
             traceback.print_exc()
     
     # Initialize SQLite if PostgreSQL failed and SQLite is available
-    if not success and SQLITE_AVAILABLE:
+    if not success and DB_AVAILABLE == "SQLITE":
         try:
             # SQLite initialization code
             # [Your existing SQLite initialization code]
