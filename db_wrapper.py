@@ -189,8 +189,8 @@ def init_pg_db():
         return False
         
     try:
-        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
-            cursor = conn.cursor()
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
         if not conn:
             return False
             
@@ -241,8 +241,8 @@ def initialize_database():
     if DB_AVAILABLE is True:
         try:
             # Get a connection with the right schema
-            with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
-                cursor = conn.cursor()
+            with DatabaseConnection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
                 
                 # Get DB_ENVIRONMENT from config
                 db_env = get_db_settings().get("environment", "development")
@@ -423,8 +423,8 @@ def get_entity_metrics_batch(entity_ids, metrics=None):
     result = {metric: {} for metric in metrics}
     
     try:
-        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
-            cursor = conn.cursor()
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
             
             # Convert list to tuple for SQL IN clause
             if len(entity_ids) == 1:

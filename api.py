@@ -185,7 +185,7 @@ def load_data(entity_id=None):
     """Load data with optional entity filtering."""
     try:
         # Connect to database
-        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
+        with DatabaseConnection() as conn:
             cursor = conn.cursor()
             
             # Get the correct schema from config
@@ -285,7 +285,7 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
         entity_name = entity_id.replace("_", " ")  # Convert underscores to spaces
         
         # Connect directly to database
-        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
+        with DatabaseConnection() as conn:
             cursor = conn.cursor()
             
             # Fetch entity with exact and case-insensitive match
@@ -825,7 +825,7 @@ def get_rate_limits(key_info: dict = Depends(get_api_key)):
     # Example of how you might get all API keys
     all_clients = []
     try:
-        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
+        with DatabaseConnection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT key_hash, client_name FROM api_keys WHERE is_active = TRUE")
             all_clients = cursor.fetchall()
@@ -865,7 +865,7 @@ def test_admin_keys():
 def get_settings(key_info: dict = Depends(get_api_key)):
     """Returns dashboard settings from the database."""
     try:
-        with DatabaseConnection().connect(cursor_factory=RealDictCursor) as conn:
+        with DatabaseConnection() as conn:
             cursor = conn.cursor()
         
             # Get settings from database
@@ -1047,7 +1047,7 @@ def compare_entities(
 def save_settings(settings: dict, key_info: dict = Depends(get_api_key)):
     """Saves dashboard settings to the database."""
     try:
-        with DatabaseConnection(cursor_factory=RealDictCursor) as conn:
+        with DatabaseConnection() as conn:
             cursor = conn.cursor()
         
             # Check if settings table exists, create it if not
