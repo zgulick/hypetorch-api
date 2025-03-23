@@ -342,6 +342,7 @@ def bulk_query_v1(
 
 router = APIRouter()
 
+
 @router.get("/entities/status/metrics")
 async def get_entity_status_metrics(request: Request):
     try:
@@ -386,4 +387,5 @@ async def get_entity_metadata_metrics(request: Request):
             "status": "error",
             "message": f"Failed to load metadata metrics: {str(e)}"
         })
-    
+
+v1_router.include_router(router)    
