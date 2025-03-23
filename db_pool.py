@@ -165,7 +165,10 @@ class DatabaseConnectionPool:
             try:
                 # Get connection from PostgreSQL pool
                 conn = self.pg_pool.getconn(key=threading.get_ident())
-            
+                if conn.closed != 0:
+                    logger.warning("Got a closed PostgreSQL connection. Replacing...")
+                    self.pg_pool.putconn(conn)
+                    conn = self.pg_pool.getconn(key=threading.get_ident())
                 # Check if we actually got a connection
                 if conn is None:
                     raise Exception("Failed to get a connection from the pool")

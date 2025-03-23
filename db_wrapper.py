@@ -14,7 +14,8 @@ from contextlib import contextmanager
 import requests
 import base64
 import traceback
-from db_config import get_db_settings, POSTGRESQL_AVAILABLE
+from db_config import get_db_settings, POSTGRESQL_AVAILABLE, DB_ENVIRONMENT
+SCHEMA_PREFIX = f"{DB_ENVIRONMENT}." if POSTGRESQL_AVAILABLE is True else ""
 from db_pool import SQLITE_AVAILABLE
 
 
@@ -115,6 +116,17 @@ def init_sqlite_db():
     conn = get_sqlite_connection()
     cursor = conn.cursor()
     
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS entities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        type TEXT DEFAULT 'person',
+        category TEXT DEFAULT 'Sports',
+        subcategory TEXT DEFAULT 'Unrivaled',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
     # Create tables if they don't exist
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS hype_data (
@@ -236,7 +248,9 @@ def initialize_database():
                 db_env = get_db_settings().get("environment", "development")
                 
                 # Create schema if it doesn't exist
-                cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {db_env}")
+                if DB_AVAILABLE is True:
+                    cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {db_env}")
+                    cursor.execute(f"SET search_path TO {db_env}")
                 # Set search path to our environment
                 cursor.execute(f"SET search_path TO {db_env}")
                 
@@ -315,8 +329,7 @@ def initialize_database():
     # Initialize SQLite if PostgreSQL failed and SQLite is available
     if not success and DB_AVAILABLE == "SQLITE":
         try:
-            # SQLite initialization code
-            # [Your existing SQLite initialization code]
+            init_sqlite_db()
             success = True
             print("✅ SQLite database initialized successfully")
         except Exception as e:

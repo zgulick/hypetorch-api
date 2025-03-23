@@ -185,7 +185,7 @@ def load_data(entity_id=None):
     """Load data with optional entity filtering."""
     try:
         # Connect to database
-        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+        with DatabaseConnection as conn:
             cursor = conn.cursor()
             
             # Get the correct schema from config
