@@ -187,7 +187,7 @@ def load_data(entity_id=None):
     try:
         # Connect to database
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Get the correct schema from config
             db_env = os.environ.get("DB_ENVIRONMENT", "development")
@@ -287,7 +287,7 @@ def get_entity_details(entity_id: str, key_info: dict = Depends(get_api_key)):
         
         # Connect directly to database
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Fetch entity with exact and case-insensitive match
             cursor.execute("""
@@ -598,6 +598,21 @@ def get_entity_trending(entity_id: str, key_info: dict = Depends(get_api_key)):
 @app.get("/api/last_updated")
 def get_last_updated(key_info: dict = Depends(get_api_key)):
     """Returns the last modified timestamp of the JSON file."""
+        # Try to get last update time from the database
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT MAX(timestamp) AS last_ts FROM hype_data;")
+            result = cursor.fetchone()
+            if result and result["last_ts"]:
+                # If it's a datetime object, convert to epoch seconds
+                last_ts = result["last_ts"]
+                if hasattr(last_ts, "timestamp"):
+                    last_ts = last_ts.timestamp()
+                return {"last_updated": last_ts}
+    except Exception:
+        # If there's any error (no DB or query failed), just use file fallback
+        pass
     if DATA_FILE.exists():
         return {"last_updated": os.path.getmtime(DATA_FILE)}
     return {"message": "No data available."}
@@ -827,7 +842,7 @@ def get_rate_limits(key_info: dict = Depends(get_api_key)):
     all_clients = []
     try:
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("SELECT key_hash, client_name FROM api_keys WHERE is_active = TRUE")
             all_clients = cursor.fetchall()
     except Exception as e:
@@ -867,7 +882,7 @@ def get_settings(key_info: dict = Depends(get_api_key)):
     """Returns dashboard settings from the database."""
     try:
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         
             # Get settings from database
             cursor.execute("""
@@ -1049,7 +1064,7 @@ def save_settings(settings: dict, key_info: dict = Depends(get_api_key)):
     """Saves dashboard settings to the database."""
     try:
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         
             # Check if settings table exists, create it if not
             cursor.execute("""

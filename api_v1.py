@@ -35,7 +35,8 @@ def get_entities_v1(
     
     try:
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
             
             # Build query with filters
             query = "SELECT id, name, type, category, subcategory FROM entities"
@@ -119,8 +120,8 @@ def get_entity_details_v1(
         entity_name = entity_id.replace("_", " ")
         
         with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
-            cursor = conn.cursor()
-            
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
             # Fetch entity
             cursor.execute("""
                 SELECT id, name, type, category, subcategory 
