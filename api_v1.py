@@ -1,16 +1,18 @@
 # api_v1.py
-from fastapi import APIRouter, Depends, Query, HTTPException, File, UploadFile
+from fastapi import APIRouter, Depends, Query, Request, HTTPException, File, UploadFile
 from typing import Optional, List
 import time
 import json
 
 from api_utils import StandardResponse
 from auth_middleware import get_api_key
-from db_wrapper import get_db_connection, DatabaseConnection, get_entity_metrics_batch
+from db_wrapper import get_db_connection, DatabaseConnection, get_entity_metrics_batch, get_entities_with_status_metrics, get_entities_with_data_metrics, get_entities_with_metadata_metrics
 import psycopg2
 from db_operations import save_all_data, load_latest_data
 from api_models import BulkEntityQuery
 from db_historical import get_entity_history
+from fastapi.responses import JSONResponse
+
 
 # Create v1 router
 v1_router = APIRouter(prefix="/v1")
@@ -330,3 +332,52 @@ def bulk_query_v1(
             status_code=500,
             details=str(e)
         )
+
+
+router = APIRouter()
+
+@router.get("/entities/status/metrics")
+async def get_entity_status_metrics(request: Request):
+    try:
+        results = get_entities_with_status_metrics()
+        return JSONResponse(content={
+            "status": "success",
+            "data": results["data"],
+            "metadata": results["metadata"]
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "status": "error",
+            "message": f"Failed to load status metrics: {str(e)}"
+        })
+
+@router.get("/entities/data/metrics")
+async def get_entity_data_metrics(request: Request):
+    try:
+        results = get_entities_with_data_metrics()
+        return JSONResponse(content={
+            "status": "success",
+            "data": results["data"],
+            "metadata": results["metadata"]
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "status": "error",
+            "message": f"Failed to load data metrics: {str(e)}"
+        })
+
+@router.get("/entities/metadata/metrics")
+async def get_entity_metadata_metrics(request: Request):
+    try:
+        results = get_entities_with_metadata_metrics()
+        return JSONResponse(content={
+            "status": "success",
+            "data": results["data"],
+            "metadata": results["metadata"]
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "status": "error",
+            "message": f"Failed to load metadata metrics: {str(e)}"
+        })
+    
