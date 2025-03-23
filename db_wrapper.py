@@ -14,7 +14,9 @@ from contextlib import contextmanager
 import requests
 import base64
 import traceback
-from db_config import get_db_settings
+from db_config import get_db_settings, POSTGRESQL_AVAILABLE
+from db_pool import SQLITE_AVAILABLE
+
 
 # Flag to track if database functionality is available
 DB_AVAILABLE = False
@@ -104,8 +106,8 @@ DB_ENVIRONMENT = os.environ.get("DB_ENVIRONMENT", "development")
 
 # Setup SQLite connection if needed
 def get_sqlite_connection():
-    """Create a connection to the SQLite database"""
-    conn = get_db_connection()  # Get SQLite connection from the pool
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
     return conn
 
 def init_sqlite_db():
@@ -149,12 +151,14 @@ def get_pg_connection():
         conn = get_db_connection(psycopg2.extras.RealDictCursor)
         
         # Set the search path to the appropriate schema
-        with conn.cursor() as cursor:
+        cursor = conn.cursor()
+        try:
             # Create schema if it doesn't exist
             cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_ENVIRONMENT}")
             # Set search path to our environment
             cursor.execute(f"SET search_path TO {DB_ENVIRONMENT}")
-        
+        finally:
+            cursor.close()
         conn.commit()
         return conn
     except Exception as e:
@@ -1083,59 +1087,59 @@ def import_entities_to_database():
         if not os.path.exists(entities_json_path):
             print("❌ entities.json file not found")
             return False
-            
+
         # Load entities from JSON
         with open(entities_json_path, 'r') as f:
             entities_data = json.load(f)
-            
+
         # Connect to database
-        if DB_AVAILABLE == True:  # PostgreSQL
+        if DB_AVAILABLE is True:  # PostgreSQL
             conn = get_pg_connection()
             if not conn:
                 raise Exception("Failed to connect to PostgreSQL database")
-                
+
             cursor = conn.cursor()
-            
-            # Import all entities from the JSON file
-            entities_imported = 0
-            for category in entities_data:
-                for subcategory in entities_data[category]:
-                    for entity_obj in entities_data[category][subcategory]:
-                        entity_name = entity_obj.get("name")
-                        entity_type = entity_obj.get("type")
-                        
-                        if not entity_name:
-                            continue
-                            
-                        # Check if entity already exists
-                        cursor.execute("SELECT id FROM entities WHERE name = %s", (entity_name,))
-                        if cursor.fetchone():
-                            # Skip existing entities
-                            continue
-                        
-                        # Insert new entity
-                        cursor.execute(
-                            """
-                            INSERT INTO development.entities (name, type, category, subcategory)
-                            VALUES (%s, %s, %s, %s)
-                            """,
-                            (entity_name, entity_type, category, subcategory)
-                        )
-                        entities_imported += 1
-            
-            # Commit changes
-            conn.commit()
-            conn.close()
-            print(f"✅ Imported {entities_imported} entities from JSON to database")
-            return True
-                
+            try:
+                entities_imported = 0
+
+                for category, subcategories in entities_data.items():
+                    for subcategory, entity_list in subcategories.items():
+                        for entity_obj in entity_list:
+                            entity_name = entity_obj.get("name")
+                            entity_type = entity_obj.get("type")
+
+                            if not entity_name:
+                                continue
+
+                            # Check if entity already exists
+                            cursor.execute("SELECT id FROM entities WHERE name = %s", (entity_name,))
+                            if cursor.fetchone():
+                                continue  # Skip existing
+
+                            # Insert new entity
+                            cursor.execute("""
+                                INSERT INTO entities (name, type, category, subcategory)
+                                VALUES (%s, %s, %s, %s)
+                            """, (entity_name, entity_type, category, subcategory))
+
+                            entities_imported += 1
+
+                conn.commit()
+                print(f"✅ Imported {entities_imported} entities from JSON to database")
+                return True
+
+            finally:
+                cursor.close()
+                conn.close()
+
         else:
             print("❌ Database not available for import")
             return False
-            
+
     except Exception as e:
         print(f"❌ Error importing entities: {e}")
         return False
+
     
 def export_entities_to_json():
     """Export all entities from database to entities.json files"""
@@ -1146,59 +1150,61 @@ def export_entities_to_json():
                 raise Exception("Failed to connect to PostgreSQL database")
                 
             cursor = conn.cursor()
+            try:
+                # Get all entities from database using the correct schema
+                cursor.execute(f"""
+                    SELECT name, type, category, subcategory
+                    FROM {DB_ENVIRONMENT}.entities
+                """)
+
+                db_entities = cursor.fetchall()
             
-            # Get all entities from database using the correct schema
-            cursor.execute("""
-                SELECT 
-                    name, type, category, subcategory
-                FROM development.entities
-            """)
-            db_entities = cursor.fetchall()
+                # Create structure for entities.json
+                entities_data = {}
             
-            # Create structure for entities.json
-            entities_data = {}
+                # Group entities by category and subcategory
+                for entity in db_entities:
+                    name, entity_type, category, subcategory = entity  # Only unpack 4 values
+                
+                    if category not in entities_data:
+                        entities_data[category] = {}
+                
+                    if subcategory not in entities_data[category]:
+                        entities_data[category][subcategory] = []
+                
+                    # Create empty lists for missing columns
+                    aliases_list = []  # Define this variable explicitly
+                    related_entities_list = [subcategory]  # Define this variable explicitly
+                
+                    # Create entity object with default values for missing columns
+                    entity_obj = {
+                        "name": name,
+                        "type": entity_type,
+                        "gender": "female" if entity_type == "person" else "neutral",
+                        "aliases": aliases_list,  # Use the defined variable
+                        "related_entities": related_entities_list  # Use the defined variable
+                    }
+                
+                    # Add to appropriate list
+                    entities_data[category][subcategory].append(entity_obj)
             
-            # Group entities by category and subcategory
-            for entity in db_entities:
-                name, entity_type, category, subcategory = entity  # Only unpack 4 values
-                
-                if category not in entities_data:
-                    entities_data[category] = {}
-                
-                if subcategory not in entities_data[category]:
-                    entities_data[category][subcategory] = []
-                
-                # Create empty lists for missing columns
-                aliases_list = []  # Define this variable explicitly
-                related_entities_list = [subcategory]  # Define this variable explicitly
-                
-                # Create entity object with default values for missing columns
-                entity_obj = {
-                    "name": name,
-                    "type": entity_type,
-                    "gender": "female" if entity_type == "person" else "neutral",
-                    "aliases": aliases_list,  # Use the defined variable
-                    "related_entities": related_entities_list  # Use the defined variable
-                }
-                
-                # Add to appropriate list
-                entities_data[category][subcategory].append(entity_obj)
+                # Path to export
+                export_path = BASE_DIR / "entities.json"
             
-            # Path to export
-            export_path = BASE_DIR / "entities.json"
+                # Save to file
+                with open(export_path, 'w') as f:
+                    json_content = json.dumps(entities_data, indent=4)
+                    f.write(json_content)
+                print(f"✅ Exported entities to {export_path}")
             
-            # Save to file
-            with open(export_path, 'w') as f:
-                json_content = json.dumps(entities_data, indent=4)
-                f.write(json_content)
-            print(f"✅ Exported entities to {export_path}")
-            
-            # Push to GitHub
-            push_success = push_to_github(json_content)
-            print(f"GitHub push {'succeeded' if push_success else 'failed'}")
-                
-            conn.close()
-            print(f"✅ Exported {len(db_entities)} entities from database to JSON")
+                # Push to GitHub
+                push_success = push_to_github(json_content)
+                print(f"GitHub push {'succeeded' if push_success else 'failed'}")
+
+            finally:    
+                cursor.close()
+                conn.close()
+                print(f"✅ Exported {len(db_entities)} entities from database to JSON")
             return True
                 
         else:
