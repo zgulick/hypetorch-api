@@ -3,7 +3,7 @@
 
 import os
 import json
-import time
+from datetime import datetime
 from db_pool import DatabaseConnection, execute_query, execute_transaction
 from db_pool import get_db_connection, return_db_connection, DatabaseConnectionPool
 from datetime import datetime
@@ -570,32 +570,131 @@ from psycopg2.extras import RealDictCursor
 
 
 def get_entities_with_status_metrics():
-    with db_pool.get_connection() as conn:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT name, talk_time, mentions, sentiment
-            FROM hype_data_flat
-        """)
-        return cursor.fetchall()
+    """Get entity status metrics from existing tables"""
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Fetch from existing tables instead of hype_data_flat
+            cursor.execute("""
+                SELECT e.name, 
+                       cm_talk.value as talk_time,
+                       cm_mentions.value as mentions,
+                       0 as sentiment  -- Placeholder for sentiment
+                FROM entities e
+                LEFT JOIN (
+                    SELECT entity_id, value
+                    FROM component_metrics
+                    WHERE metric_type = 'talk_time_counts'
+                    AND timestamp = (SELECT MAX(timestamp) FROM component_metrics WHERE metric_type = 'talk_time_counts')
+                ) cm_talk ON e.id = cm_talk.entity_id
+                LEFT JOIN (
+                    SELECT entity_id, value
+                    FROM component_metrics
+                    WHERE metric_type = 'mention_counts'
+                    AND timestamp = (SELECT MAX(timestamp) FROM component_metrics WHERE metric_type = 'mention_counts')
+                ) cm_mentions ON e.id = cm_mentions.entity_id
+                ORDER BY e.name
+            """)
+            
+            results = cursor.fetchall()
+            return {
+                "data": results,
+                "metadata": {
+                    "timestamp": datetime.now().isoformat(),
+                    "count": len(results)
+                }
+            }
+            
+    except Exception as e:
+        print(f"Error getting entity status metrics: {e}")
+        raise e
 
 def get_entities_with_data_metrics():
-    with db_pool.get_connection() as conn:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT name, google_trends, wikipedia_views, reddit_mentions
-            FROM hype_data_flat
-        """)
-        return cursor.fetchall()
+    """Get entity data metrics from existing tables"""
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Fetch from existing tables instead of hype_data_flat
+            cursor.execute("""
+                SELECT e.name, 
+                       cm_google.value as google_trends,
+                       cm_wiki.value as wikipedia_views,
+                       cm_reddit.value as reddit_mentions
+                FROM entities e
+                LEFT JOIN (
+                    SELECT entity_id, value
+                    FROM component_metrics
+                    WHERE metric_type = 'google_trends'
+                    AND timestamp = (SELECT MAX(timestamp) FROM component_metrics WHERE metric_type = 'google_trends')
+                ) cm_google ON e.id = cm_google.entity_id
+                LEFT JOIN (
+                    SELECT entity_id, value
+                    FROM component_metrics
+                    WHERE metric_type = 'wikipedia_views'
+                    AND timestamp = (SELECT MAX(timestamp) FROM component_metrics WHERE metric_type = 'wikipedia_views')
+                ) cm_wiki ON e.id = cm_wiki.entity_id
+                LEFT JOIN (
+                    SELECT entity_id, value
+                    FROM component_metrics
+                    WHERE metric_type = 'reddit_mentions'
+                    AND timestamp = (SELECT MAX(timestamp) FROM component_metrics WHERE metric_type = 'reddit_mentions')
+                ) cm_reddit ON e.id = cm_reddit.entity_id
+                ORDER BY e.name
+            """)
+            
+            results = cursor.fetchall()
+            return {
+                "data": results,
+                "metadata": {
+                    "timestamp": datetime.now().isoformat(),
+                    "count": len(results)
+                }
+            }
+            
+    except Exception as e:
+        print(f"Error getting entity data metrics: {e}")
+        raise e
 
 def get_entities_with_metadata_metrics():
-    with db_pool.get_connection() as conn:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT name, hype_score, rodmn_score
-            FROM hype_data_flat
-        """)
-        return cursor.fetchall()
-
+    """Get entity metadata metrics from existing tables"""
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Fetch from existing tables instead of hype_data_flat
+            cursor.execute("""
+                SELECT e.name, 
+                       h.score as hype_score,
+                       cm_rodmn.value as rodmn_score
+                FROM entities e
+                LEFT JOIN (
+                    SELECT entity_id, score
+                    FROM hype_scores
+                    WHERE timestamp = (SELECT MAX(timestamp) FROM hype_scores)
+                ) h ON e.id = h.entity_id
+                LEFT JOIN (
+                    SELECT entity_id, value
+                    FROM component_metrics
+                    WHERE metric_type = 'rodmn_score'
+                    AND timestamp = (SELECT MAX(timestamp) FROM component_metrics WHERE metric_type = 'rodmn_score')
+                ) cm_rodmn ON e.id = cm_rodmn.entity_id
+                ORDER BY e.name
+            """)
+            
+            results = cursor.fetchall()
+            return {
+                "data": results,
+                "metadata": {
+                    "timestamp": datetime.now().isoformat(),
+                    "count": len(results)
+                }
+            }
+            
+    except Exception as e:
+        print(f"Error getting entity metadata metrics: {e}")
+        raise e
 
 # Get latest data from the database
 @with_retry(max_retries=3)
