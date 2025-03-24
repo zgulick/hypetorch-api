@@ -18,6 +18,7 @@ from db_wrapper import (
     get_entities_with_data_metrics,
     get_entities_with_metadata_metrics,
 )
+from cache_manager import cache_manager
 
 # Create v1 router
 v1_router = APIRouter(prefix="/v1")
@@ -466,5 +467,27 @@ async def get_entity_metadata_metrics(request: Request):
             "status": "error",
             "message": f"Failed to load metadata metrics: {str(e)}"
         })
+
+# Add this new endpoint
+@v1_router.get("/admin/cache/stats")
+def get_cache_stats(key_info: dict = Depends(get_api_key)):
+    """Get cache statistics."""
+    return StandardResponse.success(
+        data=cache_manager.get_stats(),
+        metadata={
+            "timestamp": time.time()
+        }
+    )
+
+@v1_router.post("/admin/cache/clear")
+def clear_cache(key_info: dict = Depends(get_api_key)):
+    """Clear the entire cache."""
+    count = cache_manager.clear()
+    return StandardResponse.success(
+        data={"cleared_items": count},
+        metadata={
+            "timestamp": time.time()
+        }
+    )
 
 v1_router.include_router(router)    

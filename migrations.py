@@ -5,6 +5,13 @@ import time
 from datetime import datetime
 from db_pool import DatabaseConnection, execute_query
 
+# Set up a log file specifically for migrations
+migration_logger = logging.getLogger('migrations')
+file_handler = logging.FileHandler('migrations.log')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s: %(message)s'))
+migration_logger.addHandler(file_handler)
+migration_logger.setLevel(logging.INFO)
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +39,7 @@ def check_migrations_table():
                 
                 if not table_exists:
                     logger.info(f"Creating migrations table {MIGRATIONS_TABLE} (SQLite)")
+                    migration_logger.info(f"Creating migrations table {MIGRATIONS_TABLE} (SQLite)")
                     cursor.execute(f"""
                         CREATE TABLE {MIGRATIONS_TABLE} (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,8 +50,10 @@ def check_migrations_table():
                     """)
                     conn.commit()
                     logger.info("Migrations table created successfully")
+                    migration_logger.info("Migrations table created successfully")
                 else:
                     logger.info("Migrations table already exists")
+                    migration_logger.info("Migrations table already exists")
             else:
                 # PostgreSQL approach
                 # Get DB_ENVIRONMENT from config
@@ -68,6 +78,7 @@ def check_migrations_table():
                 
                 if not table_exists:
                     logger.info(f"Creating migrations table {MIGRATIONS_TABLE}")
+                    migration_logger.info(f"Creating migrations table {MIGRATIONS_TABLE}")
                     cursor.execute(f"""
                         CREATE TABLE {MIGRATIONS_TABLE} (
                             id SERIAL PRIMARY KEY,
@@ -78,12 +89,15 @@ def check_migrations_table():
                     """)
                     conn.commit()
                     logger.info("Migrations table created successfully")
+                    migration_logger.info("Migrations table created successfully") 
                 else:
                     logger.info("Migrations table already exists")
+                    migration_logger.info("Migrations table already exists") 
                 
             return True
     except Exception as e:
         logger.error(f"Error checking migrations table: {e}")
+        migration_logger.error(f"Error checking migrations table: {e}""Same message")
         return False
 
 def get_applied_migrations():
@@ -110,6 +124,7 @@ def get_applied_migrations():
                 
     except Exception as e:
         logger.error(f"Error getting applied migrations: {e}")
+        migration_logger.error(f"Error getting applied migrations: {e}")
         return []
     
 def record_migration(version, description):
@@ -125,9 +140,11 @@ def record_migration(version, description):
             
             conn.commit()
             logger.info(f"Recorded migration {version}")
+            migration_logger.info(f"Recorded migration {version}")
             return True
     except Exception as e:
         logger.error(f"Error recording migration {version}: {e}")
+        migration_logger.error(f"Error recording migration {version}: {e}")
         return False
 
 # Define all migrations
@@ -295,16 +312,19 @@ def run_migrations():
     # Ensure migrations table exists
     if not check_migrations_table():
         logger.error("Failed to create migrations table. Aborting.")
+        migration_logger.error("Failed to create migrations table. Aborting.")
         return False
     
     # Get already applied migrations
     applied = get_applied_migrations()
     logger.info(f"Found {len(applied)} previously applied migrations")
+    migration_logger.info(f"Found {len(applied)} previously applied migrations")
     
     # Determine if we're using SQLite
     from db_pool import SQLITE_AVAILABLE, POSTGRESQL_AVAILABLE
     using_sqlite = (POSTGRESQL_AVAILABLE is False or POSTGRESQL_AVAILABLE == "SQLITE")
     logger.info(f"Database type: {'SQLite' if using_sqlite else 'PostgreSQL'}")
+    migration_logger.info(f"Database type: {'SQLite' if using_sqlite else 'PostgreSQL'}")
     
     # Apply pending migrations
     success = True
@@ -313,9 +333,11 @@ def run_migrations():
         
         if version in applied:
             logger.info(f"Migration {version} already applied, skipping")
+            migration_logger.info(f"Migration {version} already applied, skipping")
             continue
             
         logger.info(f"Applying migration {version}: {migration['description']}")
+        migration_logger.info(f"Applying migration {version}: {migration['description']}")
         
         try:
             with DatabaseConnection() as conn:
@@ -385,19 +407,24 @@ def run_migrations():
                     logger.warning(f"Failed to record migration {version}, but changes were applied")
                 
                 logger.info(f"Successfully applied migration {version}")
+                migration_logger.info(f"Successfully applied migration {version}")
         except Exception as e:
             logger.error(f"Error applying migration {version}: {e}")
+            migration_logger.error(f"Error applying migration {version}: {e}") 
             success = False
             break
     
     if success:
         logger.info("All migrations completed successfully")
+        migration_logger.info("All migrations completed successfully")
     else:
         logger.error("Migration process encountered errors")
+        migration_logger.error("Migration process encountered errors") 
         
     return success
 
 # Run migrations when directly executed
 if __name__ == "__main__":
     logger.info("Starting database migrations...")
+    migration_logger.info("Starting database migrations...")
     run_migrations()

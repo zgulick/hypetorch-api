@@ -3,6 +3,8 @@ import logging
 import time
 from functools import wraps
 from typing import Any, Callable, TypeVar, cast
+import time
+import functools
 
 # Set up logging
 logging.basicConfig(
@@ -86,6 +88,17 @@ def with_connection(conn_func):
                         logger.warning(f"Error closing database connection: {str(e)}")
         return wrapper
     return decorator
+
+def timing_decorator(func):
+    """Decorator to time function execution"""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"⏱️ {func.__name__} executed in {(end_time - start_time) * 1000:.2f}ms")
+        return result
+    return wrapper
 
 def transactional(func):
     """

@@ -19,6 +19,7 @@ SCHEMA_PREFIX = f"{DB_ENVIRONMENT}." if POSTGRESQL_AVAILABLE is True else ""
 from db_pool import SQLITE_AVAILABLE
 from db_pool import DatabaseConnectionPool
 from psycopg2.extras import RealDictCursor
+from cache_manager import cached_query, invalidate_entity_cache
 
 # Flag to track if database functionality is available
 DB_AVAILABLE = False
@@ -411,6 +412,7 @@ def save_json_data(data):
         except:
             return False, f"Complete failure: {e}"
 
+@cached_query(ttl=180)
 def get_entity_metrics_batch(entity_ids, metrics=None):
     """
     Get metrics for multiple entities in a single query.
@@ -588,7 +590,7 @@ def save_entity_history_sqlite(cursor, data, timestamp):
 
 from psycopg2.extras import RealDictCursor
 
-
+@cached_query(ttl=300)
 def get_entities_with_status_metrics():
     """Get entity status metrics from existing tables"""
     try:
@@ -629,7 +631,8 @@ def get_entities_with_status_metrics():
     except Exception as e:
         print(f"Error getting entity status metrics: {e}")
         raise e
-
+    
+@cached_query(ttl=300)
 def get_entities_with_data_metrics():
     """Get entity data metrics from existing tables"""
     try:
@@ -677,6 +680,7 @@ def get_entities_with_data_metrics():
         print(f"Error getting entity data metrics: {e}")
         raise e
 
+@cached_query(ttl=300)
 def get_entities_with_metadata_metrics():
     """Get entity metadata metrics from existing tables"""
     try:
@@ -717,6 +721,7 @@ def get_entities_with_metadata_metrics():
         raise e
 
 # Get latest data from the database
+@cached_query(ttl=300)
 @with_retry(max_retries=3)
 def get_latest_data():
     """Retrieve the most recent data from the database"""
@@ -783,6 +788,7 @@ def get_latest_data():
             return {}
 
 # Get entity history from the database
+@cached_query(ttl=300)
 @with_retry(max_retries=3)
 def get_entity_history(entity_name, limit=10):
     """Get historical data for a specific entity"""
@@ -924,6 +930,7 @@ def save_to_sqlite(conn, data, data_json, timestamp):
     
     print("✅ Data saved to SQLite successfully")
 
+@cached_query(ttl=300)
 def save_entity_history_pg(cursor, data, timestamp):
     """Extract entity data and save to PostgreSQL entity_history table"""
     hype_scores = data.get("hype_scores", {})
@@ -1038,6 +1045,7 @@ def save_entity_history_sqlite(cursor, data, timestamp):
     
     print(f"✅ Saved history for {successful_inserts}/{len(hype_scores)} entities to SQLite")    
 
+@cached_query(ttl=300)
 @with_retry(max_retries=3)
 def update_entity(entity_name, entity_data):
     try:
@@ -1131,6 +1139,7 @@ def update_entity(entity_name, entity_data):
     finally:
         conn.close()
 
+@cached_query(ttl=300)
 def create_entity(entity_data):
     """
     Create a new entity with comprehensive validation and cross-system sync.
@@ -1189,7 +1198,7 @@ def create_entity(entity_data):
                 export_entities_to_json()
                 
                 return True, f"Entity '{name}' created successfully"
-                        
+                
             except Exception as e:
                 # Rollback transaction on any error
                 conn.rollback()
@@ -1471,6 +1480,7 @@ def push_to_github(file_content):
         print(f"❌ Error pushing to GitHub: {e}")
         return False
 
+@cached_query(ttl=300)
 def get_entity_with_metadata(entity_name, include_metrics=False):
     """
     Get entity details with metadata from the database.

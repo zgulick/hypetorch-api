@@ -32,6 +32,8 @@ from fastapi.responses import JSONResponse
 import uuid
 import logging
 from api_models import EntityCreate, EntityUpdate
+import hashlib
+from fastapi.responses import Response
 
 # Initialize the database
 try:
@@ -47,6 +49,14 @@ try:
 except Exception as e:
     print(f"❌ Database initialization error: {e}")
     db_initialized = False
+
+# Run migrations on startup
+try:
+    from run_migrations import run_migrations
+    migrations_success = run_migrations()
+    print(f"Database migrations: {'✅ Success' if migrations_success else '❌ Failed'}")
+except Exception as e:
+    print(f"Error running migrations: {e}")
 
 # Set the correct directory path for Render
 BASE_DIR = Path("/opt/render/project/src") if os.path.exists("/opt/render/project") else Path(".")
@@ -69,6 +79,45 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add this middleware to api.py after your existing middlewares
+@app.middleware("http")
+async def add_cache_headers(request: Request, call_next):
+    """Add cache-control headers to responses."""
+    response = await call_next(request)
+    
+    # Skip cache headers for dynamically changing content
+    if request.url.path.startswith("/api/admin"):
+        # Admin endpoints shouldn't be cached
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    elif request.method == "GET" and request.url.path.startswith("/api/v1/entities"):
+        # Entity data can be cached briefly
+        response.headers["Cache-Control"] = "public, max-age=60"  # 1 minute
+        
+        # Add ETag headers for conditional requests (simple implementation)
+        response_body = b""
+        async for chunk in response.body_iterator:
+            response_body += chunk
+            
+        # Generate ETag from response content
+        etag = hashlib.md5(response_body).hexdigest()
+        response.headers["ETag"] = f'"{etag}"'
+        
+        # Check If-None-Match header for conditional requests
+        if_none_match = request.headers.get("If-None-Match")
+        if if_none_match and if_none_match == f'"{etag}"':
+            return Response(status_code=304)  # Not Modified
+        
+        # Reconstruct response with the original body
+        new_response = Response(
+            content=response_body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type
+        )
+        return new_response
+    
+    return response
 
 # Register the API key management routes
 app.include_router(api_key_router)  # Remove the prefix here
