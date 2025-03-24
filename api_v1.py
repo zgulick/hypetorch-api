@@ -238,105 +238,112 @@ def bulk_query_v1(
     """
     start_time = time.time()
     try:
-        # Prepare list of entity names (case-insensitive match)
-        names = [name.lower() for name in query.entities]
-        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
-            cursor = conn.cursor()
-            # Build a parameter list for SQL IN clause (e.g., "%s, %s, %s")
-            placeholders = ", ".join(["%s"] * len(names))
-            cursor.execute(
-                f"SELECT id, name, type, category, subcategory FROM entities "
-                f"WHERE LOWER(name) IN ({placeholders})",
-                names
-            )
-            entities = cursor.fetchall()
+        # Load all data (this is a simpler approach that uses your existing functions)
+        data = load_latest_data()
         
-        if not entities:
-            # No matching entities found at all
-            return StandardResponse.error(
-                message="No entities found for the given names",
-                status_code=404
-            )
+        # Extract needed data collections
+        hype_scores = data.get("hype_scores", {})
+        mentions = data.get("mention_counts", {})
+        talk_time = data.get("talk_time_counts", {})
+        rodmn_scores = data.get("rodmn_scores", {})
         
-        # Determine if any requested names were not found
-        found_names = {e["name"].lower() for e in entities}
-        missing = [name for name in names if name not in found_names]
-        if missing:
-            return StandardResponse.error(
-                message=f"Entities not found: {', '.join(missing)}",
-                status_code=404
-            )
-        
-        # Collect IDs and prepare output structure
-        entity_ids = [e["id"] for e in entities]
+        # Process requested entities
         results = []
-        
-        # Fetch latest metrics for these entities (hype_score, mentions, etc.)
-        metrics_request = None
-        if query.metrics:
-            # Map high-level metric names to internal keys if needed
-            metrics_request = []
-            for metric in query.metrics:
-                if metric == "mentions":
-                    metrics_request.append("mention_counts")
-                elif metric == "talk_time":
-                    metrics_request.append("talk_time_counts")
-                else:
-                    metrics_request.append(metric)
-        # Execute batch metrics query (None means get default set of metrics)
-        metrics_data = get_entity_metrics_batch(entity_ids, metrics=metrics_request)
-        
-        # Build each entity's response data
-        for e in entities:
-            entity_name = e["name"]
-            item = {
-                "id": e["id"],
-                "name": entity_name,
-                "type": e["type"],
-                "category": e["category"],
-                "subcategory": e["subcategory"]
+        for entity_name in query.entities:
+            # Try case-insensitive matching
+            matched_entity = None
+            for existing_name in hype_scores.keys():
+                if entity_name.lower() == existing_name.lower():
+                    matched_entity = existing_name
+                    break
+            
+            if not matched_entity:
+                continue
+                
+            # Create entity result
+            entity_result = {
+                "name": matched_entity,
+                "metrics": {}
             }
-            # Include metrics values if any were fetched
-            if metrics_data:
-                item["metrics"] = {}
-                for metric_key, values in metrics_data.items():
-                    # Map internal keys back to API-friendly names
-                    key_name = metric_key
-                    if key_name == "mention_counts":
-                        key_name = "mentions"
-                    if key_name == "talk_time_counts":
-                        key_name = "talk_time"
-                    if entity_name in values:
-                        # Include the value (and optionally timestamp if needed)
-                        item["metrics"][key_name] = {
-                            "value": values[entity_name]
-                        }
-            # Include historical data if requested
+            
+            # Add requested metrics
+            requested_metrics = query.metrics or ["hype_score", "mentions", "talk_time"]
+            
+            if "hype_score" in requested_metrics:
+                entity_result["metrics"]["hype_score"] = hype_scores.get(matched_entity, 0)
+                
+            if "mentions" in requested_metrics:
+                entity_result["metrics"]["mentions"] = mentions.get(matched_entity, 0)
+                
+            if "talk_time" in requested_metrics:
+                entity_result["metrics"]["talk_time"] = talk_time.get(matched_entity, 0)
+                
+            if "rodmn_score" in requested_metrics:
+                entity_result["metrics"]["rodmn_score"] = rodmn_scores.get(matched_entity, 0)
+            
+            # Add history if requested
             if query.include_history:
-                history_limit = query.history_limit or 30
-                item["history"] = {
-                    "hype_score": get_entity_history(entity_name, history_limit)
+                from db_historical import get_entity_history
+                entity_result["history"] = {
+                    "hype_score": get_entity_history(matched_entity, query.history_limit or 30)
                 }
-            results.append(item)
+            
+            results.append(entity_result)
         
-        # Compute response time
-        processing_ms = (time.time() - start_time) * 1000
+        # Check if we found any results
+        if not results:
+            return StandardResponse.error(
+                message="No matching entities found",
+                status_code=404
+            )
+        
+        # Return success response
         return StandardResponse.success(
             data=results,
             metadata={
-                "processing_time_ms": round(processing_ms, 2),
+                "processing_time_ms": round((time.time() - start_time) * 1000, 2),
                 "entity_count": len(results),
-                "metrics_included": query.metrics or "default",
-                "include_history": query.include_history
+                "metrics_included": query.metrics or ["hype_score", "mentions", "talk_time"]
             }
         )
     except Exception as e:
         print(f"Error in bulk_query_v1: {e}")
+        import traceback
+        traceback.print_exc()
         return StandardResponse.error(
             message="Failed to retrieve bulk entity data",
             status_code=500,
             details=str(e)
         )
+
+@v1_router.get("/bulk")
+def bulk_query_get_v1(
+    entities: str = Query(..., description="Comma-separated list of entity names"),
+    metrics: Optional[str] = Query(None, description="Comma-separated list of metrics"),
+    include_history: bool = Query(False, description="Include historical data"),
+    history_limit: int = Query(30, ge=1, le=100, description="Max history points"),
+    time_period: Optional[str] = Query(None, description="Time period"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    GET version of the bulk query endpoint. 
+    Takes comma-separated query parameters instead of a JSON body.
+    """
+    # Convert string parameters to lists
+    entity_list = [e.strip() for e in entities.split(",")]
+    metrics_list = [m.strip() for m in metrics.split(",")] if metrics else None
+    
+    # Create a BulkEntityQuery object
+    query = BulkEntityQuery(
+        entities=entity_list,
+        metrics=metrics_list,
+        include_history=include_history,
+        history_limit=history_limit,
+        time_period=time_period
+    )
+    
+    # Call the POST version with the converted parameters
+    return bulk_query_v1(query, key_info)
 
 @v1_router.get("/entities/{entity_id}/metrics")
 def get_entity_metrics_v1(

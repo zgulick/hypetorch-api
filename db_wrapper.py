@@ -422,6 +422,9 @@ def get_entity_metrics_batch(entity_ids, metrics=None):
     Returns:
         dict: Mapped metrics by entity and metric type
     """
+    if not entity_ids:
+        return {}
+    
     metrics = metrics or ["hype_score", "mention_counts", "talk_time_counts", "rodmn_score"]
     result = {metric: {} for metric in metrics}
     
@@ -432,70 +435,87 @@ def get_entity_metrics_batch(entity_ids, metrics=None):
             # Convert list to tuple for SQL IN clause
             if len(entity_ids) == 1:
                 # Special case for single ID (needs trailing comma)
-                id_tuple = f"({entity_ids[0]},)"
+                id_tuple = f"({entity_ids[0]})"
             else:
                 id_tuple = str(tuple(entity_ids))
             
-            # Customize query based on requested metrics
-            metric_to_table = {
-                "hype_score": "hype_scores",
-                "mention_counts": "component_metrics",
-                "talk_time_counts": "component_metrics",
-                "rodmn_score": "component_metrics"
-            }
+            # Get entity names for mapping
+            cursor.execute(f"""
+                SELECT id, name FROM entities
+                WHERE id IN {id_tuple}
+            """)
             
-            for metric in metrics:
-                table = metric_to_table.get(metric)
-                if not table:
-                    continue
-                    
-                if table == "hype_scores":
-                    query = f"""
-                    SELECT e.name, h.score
+            entity_name_map = {row["id"]: row["name"] for row in cursor.fetchall()}
+            
+            # Get hype scores if requested
+            if "hype_score" in metrics:
+                # Batch query all hype scores at once
+                cursor.execute(f"""
+                    SELECT e.id as entity_id, e.name, h.score
                     FROM entities e
-                    JOIN hype_scores h ON e.id = h.entity_id
-                    WHERE e.id IN {id_tuple}
-                    AND h.timestamp = (
-                        SELECT MAX(timestamp) 
-                        FROM hype_scores 
-                        WHERE entity_id = h.entity_id
-                    )
-                    """
-                    cursor.execute(query)
-                    
-                    for row in cursor.fetchall():
-                        result["hype_score"][row["name"]] = row["score"]
-                        
-                elif table == "component_metrics":
-                    metric_field = "metric_type"
-                    metric_value = metric
-                    
+                    JOIN (
+                        SELECT entity_id, MAX(timestamp) as max_timestamp
+                        FROM hype_scores
+                        WHERE entity_id IN {id_tuple}
+                        GROUP BY entity_id
+                    ) latest ON e.id = latest.entity_id
+                    JOIN hype_scores h ON latest.entity_id = h.entity_id 
+                        AND latest.max_timestamp = h.timestamp
+                """)
+                
+                for row in cursor.fetchall():
+                    result["hype_score"][row["name"]] = row["score"]
+            
+            # Get component metrics if requested 
+            component_metrics = [m for m in metrics if m != "hype_score"]
+            
+            if component_metrics:
+                # Build a list of metric types for the IN clause
+                metric_placeholders = []
+                metric_values = []
+                
+                for metric in component_metrics:
                     if metric == "rodmn_score":
-                        metric_value = "rodmn_score"
+                        metric_values.append("rodmn_score")
+                    else:
+                        metric_values.append(metric)
                     
-                    query = f"""
-                    SELECT e.name, cm.value
+                    metric_placeholders.append("%s")
+                
+                metric_clause = ", ".join(metric_placeholders)
+                
+                # Batch query all requested metrics at once
+                query = f"""
+                    SELECT e.id as entity_id, e.name, cm.metric_type, cm.value
                     FROM entities e
-                    JOIN component_metrics cm ON e.id = cm.entity_id
-                    WHERE e.id IN {id_tuple}
-                    AND cm.{metric_field} = %s
-                    AND cm.timestamp = (
-                        SELECT MAX(timestamp) 
-                        FROM component_metrics 
-                        WHERE entity_id = cm.entity_id
-                        AND {metric_field} = %s
-                    )
-                    """
-                    cursor.execute(query, (metric_value, metric_value))
+                    JOIN (
+                        SELECT entity_id, metric_type, MAX(timestamp) as max_timestamp
+                        FROM component_metrics
+                        WHERE entity_id IN {id_tuple}
+                        AND metric_type IN ({metric_clause})
+                        GROUP BY entity_id, metric_type
+                    ) latest ON e.id = latest.entity_id
+                    JOIN component_metrics cm ON latest.entity_id = cm.entity_id 
+                        AND latest.metric_type = cm.metric_type
+                        AND latest.max_timestamp = cm.timestamp
+                """
+                
+                cursor.execute(query, metric_values)
+                
+                for row in cursor.fetchall():
+                    metric_type = row["metric_type"]
+                    entity_name = row["name"]
+                    value = row["value"]
                     
-                    for row in cursor.fetchall():
-                        result[metric][row["name"]] = row["value"]
+                    # Map to the correct result category
+                    if metric_type in result:
+                        result[metric_type][entity_name] = value
             
-        return result
+            return result
     except Exception as e:
         print(f"❌ Error getting entity metrics: {e}")
         return {metric: {} for metric in metrics}
-
+    
 # Helper functions for entity history
 def save_entity_history_pg(cursor, data, timestamp):
     """Extract entity data and save to PostgreSQL entity_history table"""
@@ -1148,11 +1168,19 @@ def create_entity(entity_data):
                 if cursor.fetchone():
                     return False, f"Entity '{name}' already exists"
                 
-                # Insert new entity
+                # Insert new entity with domain support
                 cursor.execute("""
-                    INSERT INTO entities (name, type, category, subcategory) 
-                    VALUES (%s, %s, %s, %s)
-                """, (name, entity_type, category, subcategory))
+                    INSERT INTO entities 
+                    (name, type, category, subcategory, domain, metadata) 
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    name, 
+                    entity_type, 
+                    category, 
+                    subcategory, 
+                    entity_data.get("domain", category),  # Use category as domain if not provided
+                    json.dumps(entity_data.get("metadata", {}))
+                ))
                 
                 # Commit transaction
                 conn.commit()
@@ -1161,7 +1189,7 @@ def create_entity(entity_data):
                 export_entities_to_json()
                 
                 return True, f"Entity '{name}' created successfully"
-            
+                        
             except Exception as e:
                 # Rollback transaction on any error
                 conn.rollback()
@@ -1442,6 +1470,106 @@ def push_to_github(file_content):
     except Exception as e:
         print(f"❌ Error pushing to GitHub: {e}")
         return False
+
+def get_entity_with_metadata(entity_name, include_metrics=False):
+    """
+    Get entity details with metadata from the database.
+    
+    Args:
+        entity_name: Name of the entity to retrieve
+        include_metrics: Whether to include current metrics
+        
+    Returns:
+        dict: Entity details with all fields and metadata
+    """
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # First try to find by exact name
+            cursor.execute("""
+                SELECT id, name, type, category, subcategory, domain, 
+                       created_at, updated_at, metadata
+                FROM entities
+                WHERE name = %s
+            """, (entity_name,))
+            
+            entity = cursor.fetchone()
+            
+            # If not found, try case-insensitive search
+            if not entity:
+                cursor.execute("""
+                    SELECT id, name, type, category, subcategory, domain, 
+                           created_at, updated_at, metadata
+                    FROM entities
+                    WHERE LOWER(name) = LOWER(%s)
+                """, (entity_name,))
+                entity = cursor.fetchone()
+                
+            # If still not found, try partial match
+            if not entity:
+                cursor.execute("""
+                    SELECT id, name, type, category, subcategory, domain, 
+                           created_at, updated_at, metadata
+                    FROM entities
+                    WHERE name ILIKE %s
+                    LIMIT 1
+                """, (f"%{entity_name}%",))
+                entity = cursor.fetchone()
+            
+            if not entity:
+                return None
+                
+            # Convert to dict if needed
+            result = dict(entity) if not isinstance(entity, dict) else entity
+            
+            # Parse JSON metadata if it exists
+            if 'metadata' in result and result['metadata']:
+                try:
+                    if isinstance(result['metadata'], str):
+                        result['metadata'] = json.loads(result['metadata'])
+                except (json.JSONDecodeError, TypeError):
+                    result['metadata'] = {}
+            
+            # Include metrics if requested
+            if include_metrics:
+                entity_id = result['id']
+                
+                # Get latest hype score
+                cursor.execute("""
+                    SELECT score, timestamp
+                    FROM hype_scores
+                    WHERE entity_id = %s
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                """, (entity_id,))
+                
+                hype_score = cursor.fetchone()
+                if hype_score:
+                    result['hype_score'] = hype_score['score']
+                
+                # Get latest metrics
+                cursor.execute("""
+                    SELECT metric_type, value
+                    FROM component_metrics
+                    WHERE entity_id = %s
+                    AND timestamp = (
+                        SELECT MAX(timestamp) FROM component_metrics
+                        WHERE entity_id = %s
+                    )
+                """, (entity_id, entity_id))
+                
+                metrics = cursor.fetchall()
+                
+                # Add metrics to result
+                result['metrics'] = {}
+                for metric in metrics:
+                    result['metrics'][metric['metric_type']] = metric['value']
+            
+            return result
+    except Exception as e:
+        print(f"Error getting entity with metadata: {e}")
+        return None
 
 # Initialize database on module import
 initialize_database()
