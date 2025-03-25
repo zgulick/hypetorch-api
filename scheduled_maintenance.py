@@ -25,6 +25,12 @@ def run_daily_maintenance():
     # Archive old transactions (keep 90 days in main table)
     success, message = archive_old_transactions(90)
     logger.info(f"Archive result: {message}")
+    
+    # Check if it's the first day of the month to run monthly maintenance
+    today = datetime.now()
+    if today.day == 1:
+        logger.info("First day of month detected, running monthly maintenance...")
+        run_monthly_maintenance()
 
 def run_monthly_maintenance():
     """Run monthly maintenance tasks."""
@@ -59,13 +65,13 @@ def start_scheduler():
     # Schedule daily tasks (run at 2 AM)
     schedule.every().day.at("02:00").do(run_daily_maintenance)
     
-    # Schedule monthly tasks (run on the 1st of each month at 3 AM)
-    schedule.every().month.at("03:00").do(run_monthly_maintenance)
+    # We no longer use schedule.every().month as it's not supported
+    # Instead, we check the day of month in the daily task
     
     # Log scheduled tasks
     logger.info("Scheduled maintenance tasks:")
     logger.info("- Daily maintenance: 2:00 AM")
-    logger.info("- Monthly maintenance: 3:00 AM on the 1st of each month")
+    logger.info("- Monthly maintenance: 2:00 AM on the 1st of each month")
     
     # Start scheduler in a separate thread
     scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
