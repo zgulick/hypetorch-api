@@ -619,6 +619,98 @@ def find_related_entities_endpoint(
             details=str(e)
         )
 
+@v1_router.get("/api/admin/dashboard/token-usage")
+def get_token_usage_dashboard(days: int = 30, key_info: dict = Depends(get_api_key)):
+    """Get token usage summary for all clients (admin only)."""
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get all active API keys with token info
+            cursor.execute("""
+                SELECT 
+                    id, client_name, token_balance, tokens_purchased, 
+                    created_at, expires_at
+                FROM api_keys 
+                WHERE is_active = TRUE
+                ORDER BY client_name
+            """)
+            
+            keys = cursor.fetchall()
+            
+            # Get total token usage by client
+            cursor.execute("""
+                SELECT 
+                    k.id as api_key_id,
+                    k.client_name,
+                    SUM(CASE WHEN t.transaction_type = 'purchase' THEN t.amount ELSE 0 END) as tokens_purchased,
+                    SUM(CASE WHEN t.transaction_type = 'usage' THEN ABS(t.amount) ELSE 0 END) as tokens_used,
+                    COUNT(CASE WHEN t.transaction_type = 'usage' THEN 1 ELSE NULL END) as api_calls
+                FROM api_keys k
+                LEFT JOIN token_transactions t ON k.id = t.api_key_id
+                WHERE k.is_active = TRUE
+                AND (t.created_at >= NOW() - INTERVAL %s DAY OR t.created_at IS NULL)
+                GROUP BY k.id, k.client_name
+                ORDER BY tokens_used DESC
+            """, (days,))
+            
+            usage_summary = cursor.fetchall()
+            
+            # Get most used endpoints
+            cursor.execute("""
+                SELECT 
+                    endpoint,
+                    SUM(ABS(amount)) as tokens_used,
+                    COUNT(*) as call_count
+                FROM token_transactions
+                WHERE transaction_type = 'usage'
+                AND created_at >= NOW() - INTERVAL %s DAY
+                GROUP BY endpoint
+                ORDER BY tokens_used DESC
+                LIMIT 10
+            """, (days,))
+            
+            top_endpoints = cursor.fetchall()
+            
+            # Get daily usage pattern
+            cursor.execute("""
+                SELECT 
+                    DATE_TRUNC('day', created_at) as date,
+                    SUM(ABS(amount)) as tokens_used,
+                    COUNT(*) as call_count
+                FROM token_transactions
+                WHERE transaction_type = 'usage'
+                AND created_at >= NOW() - INTERVAL %s DAY
+                GROUP BY DATE_TRUNC('day', created_at)
+                ORDER BY date
+            """, (days,))
+            
+            daily_usage = cursor.fetchall()
+            
+            # Format response
+            dashboard_data = {
+                "clients": [dict(k) for k in keys],
+                "usage_summary": [dict(u) for u in usage_summary],
+                "top_endpoints": [dict(e) for e in top_endpoints],
+                "daily_usage": [dict(d) for d in daily_usage],
+                "period_days": days
+            }
+            
+            return StandardResponse.success(
+                data=dashboard_data,
+                metadata={
+                    "timestamp": time.time(),
+                    "days": days
+                }
+            )
+    except Exception as e:
+        print(f"Error getting token usage dashboard: {e}")
+        return StandardResponse.error(
+            message="Failed to retrieve token usage dashboard",
+            status_code=500,
+            details=str(e)
+        )
+
 router = APIRouter()
 
 @router.get("/entities/status/metrics")

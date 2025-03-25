@@ -119,8 +119,93 @@ async def add_cache_headers(request: Request, call_next):
     
     return response
 
+@app.middleware("http")
+async def token_tracking_middleware(request: Request, call_next):
+    """Middleware to track and deduct tokens for API usage."""
+    # Skip token tracking for non-API routes and health checks
+    if not request.url.path.startswith("/api/") or request.url.path == "/api/health-check":
+        return await call_next(request)
+    
+    from token_manager import calculate_token_cost, deduct_tokens
+    import uuid
+    
+    # Generate unique request ID
+    request_id = str(uuid.uuid4())
+    start_time = time.time()
+    
+    # Get client information
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Get API key from header
+    api_key = request.headers.get("X-API-Key")
+    api_key_id = None
+    
+    # Process only if API key is provided
+    if api_key:
+        # Get API key ID from the database
+        try:
+            from api_key_manager import validate_api_key
+            key_info = validate_api_key(api_key)
+            if key_info:
+                api_key_id = key_info.get("id")
+        except Exception as e:
+            print(f"Error validating API key for token tracking: {e}")
+    
+    # Calculate token cost
+    endpoint = request.url.path
+    token_cost = calculate_token_cost(endpoint)
+    
+    # Create metadata for tracking
+    metadata = {
+        "method": request.method,
+        "query_params": str(request.query_params)
+    }
+    
+    #Check and deduct tokens if we have a valid API key ID
+    token_deduction_success = False
+    deduction_message = "No API key provided"
+    
+    if api_key_id:
+        token_deduction_success, deduction_message = deduct_tokens(
+            api_key_id, token_cost, endpoint, request_id, client_ip, metadata
+        )
+        
+        # If insufficient tokens, return error response
+        if not token_deduction_success and "Insufficient token balance" in deduction_message:
+            return JSONResponse(
+                status_code=402,  # Payment Required
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": 402,
+                        "message": "Insufficient token balance. Please purchase more tokens.",
+                        "details": deduction_message
+                    },
+                    "metadata": {
+                        "timestamp": time.time(),
+                        "request_id": request_id
+                    }
+                }
+            )
+    
+    # Process the request
+    response = await call_next(request)
+    
+    # Add token tracking headers to the response
+    if api_key_id:
+        response.headers["X-Tokens-Used"] = str(token_cost)
+        response.headers["X-Tokens-Status"] = "deducted" if token_deduction_success else "not-deducted"
+        
+    return response
+
 # Register the API key management routes
 app.include_router(api_key_router)  # Remove the prefix here
+
+from token_routes import router as token_router
+app.include_router(token_router)
+
+from client_token_routes import router as client_token_router
+app.include_router(client_token_router)
 
 # Set the admin secret from environment variable or use a default for development
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "temporary-dev-secret")
@@ -1306,6 +1391,15 @@ import_entities_to_database()
 
 # Include versioned routes
 app.include_router(v1_router, prefix="/api")
+
+# Initialize scheduler if enabled
+if os.environ.get("ENABLE_SCHEDULED_MAINTENANCE", "true").lower() == "true":
+    try:
+        from scheduled_maintenance import start_scheduler
+        start_scheduler()
+        print("✅ Scheduled maintenance initialized")
+    except Exception as e:
+        print(f"❌ Error initializing scheduled maintenance: {e}")
 
 # Announce available routes
 print("\n🚀 API versions available:")
