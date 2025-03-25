@@ -1293,6 +1293,7 @@ def import_entities_to_database():
             cursor = conn.cursor()
             try:
                 entities_imported = 0
+                relationships_created = 0
 
                 for category, subcategories in entities_data.items():
                     for subcategory, entity_list in subcategories.items():
@@ -1305,19 +1306,51 @@ def import_entities_to_database():
 
                             # Check if entity already exists
                             cursor.execute("SELECT id FROM entities WHERE name = %s", (entity_name,))
-                            if cursor.fetchone():
-                                continue  # Skip existing
-
-                            # Insert new entity
-                            cursor.execute("""
-                                INSERT INTO entities (name, type, category, subcategory)
-                                VALUES (%s, %s, %s, %s)
-                            """, (entity_name, entity_type, category, subcategory))
-
-                            entities_imported += 1
+                            entity_row = cursor.fetchone()
+                            
+                            if entity_row:
+                                entity_id = entity_row[0]
+                            else:
+                                # Insert new entity
+                                cursor.execute("""
+                                    INSERT INTO entities (name, type, category, subcategory)
+                                    VALUES (%s, %s, %s, %s)
+                                    RETURNING id
+                                """, (entity_name, entity_type, category, subcategory))
+                                entity_id = cursor.fetchone()[0]
+                                entities_imported += 1
+                            
+                            # Handle related entities
+                            if "related_entities" in entity_obj and entity_obj["related_entities"]:
+                                for related_name in entity_obj["related_entities"]:
+                                    # Skip self-references
+                                    if related_name == entity_name:
+                                        continue
+                                        
+                                    # Find the related entity ID
+                                    cursor.execute("SELECT id FROM entities WHERE name = %s", (related_name,))
+                                    related_row = cursor.fetchone()
+                                    
+                                    if related_row:
+                                        related_id = related_row[0]
+                                        
+                                        # Check if relationship already exists
+                                        cursor.execute("""
+                                            SELECT id FROM entity_relationships 
+                                            WHERE source_entity_id = %s AND target_entity_id = %s AND relationship_type = 'related'
+                                        """, (entity_id, related_id))
+                                        
+                                        if not cursor.fetchone():
+                                            # Create relationship
+                                            cursor.execute("""
+                                                INSERT INTO entity_relationships 
+                                                (source_entity_id, target_entity_id, relationship_type, strength)
+                                                VALUES (%s, %s, %s, %s)
+                                            """, (entity_id, related_id, 'related', 1.0))
+                                            relationships_created += 1
 
                 conn.commit()
-                print(f"✅ Imported {entities_imported} entities from JSON to database")
+                print(f"✅ Imported {entities_imported} entities and {relationships_created} relationships from JSON to database")
                 return True
 
             finally:
@@ -1331,7 +1364,6 @@ def import_entities_to_database():
     except Exception as e:
         print(f"❌ Error importing entities: {e}")
         return False
-
     
 def export_entities_to_json():
     """Export all entities from database to entities.json files"""
@@ -1480,14 +1512,15 @@ def push_to_github(file_content):
         print(f"❌ Error pushing to GitHub: {e}")
         return False
 
-@cached_query(ttl=300)
-def get_entity_with_metadata(entity_name, include_metrics=False):
+@cached_query(ttl=300)  # Cache for 5 minutes
+def get_entity_with_metadata(entity_name, include_metrics=False, include_relationships=False):
     """
     Get entity details with metadata from the database.
     
     Args:
         entity_name: Name of the entity to retrieve
         include_metrics: Whether to include current metrics
+        include_relationships: Whether to include relationships
         
     Returns:
         dict: Entity details with all fields and metadata
@@ -1576,10 +1609,378 @@ def get_entity_with_metadata(entity_name, include_metrics=False):
                 for metric in metrics:
                     result['metrics'][metric['metric_type']] = metric['value']
             
+            # Include relationships if requested
+            if include_relationships:
+                # Call the function to get relationships
+                relationships = get_entity_relationships(result['id'])
+                
+                # Organize relationships by type
+                result['relationships'] = {}
+                
+                for rel in relationships:
+                    rel_type = rel['relationship_type']
+                    direction = rel['direction']
+                    
+                    # Initialize if not exists
+                    if rel_type not in result['relationships']:
+                        result['relationships'][rel_type] = {
+                            'outgoing': [],
+                            'incoming': []
+                        }
+                    
+                    # Add to appropriate direction
+                    if direction == 'outgoing':
+                        result['relationships'][rel_type]['outgoing'].append({
+                            'entity_id': rel['target_id'],
+                            'entity_name': rel['target_name'],
+                            'entity_type': rel['target_type'],
+                            'strength': rel['strength'],
+                            'metadata': rel['metadata']
+                        })
+                    else:  # incoming
+                        result['relationships'][rel_type]['incoming'].append({
+                            'entity_id': rel['source_id'],
+                            'entity_name': rel['source_name'],
+                            'entity_type': rel['source_type'],
+                            'strength': rel['strength'],
+                            'metadata': rel['metadata']
+                        })
+            
             return result
     except Exception as e:
         print(f"Error getting entity with metadata: {e}")
         return None
+
+@with_retry(max_retries=3)
+def create_entity_relationship(source_entity, target_entity, relationship_type, strength=None, metadata=None):
+    """
+    Create a relationship between two entities.
+    
+    Args:
+        source_entity: Name or ID of the source entity
+        target_entity: Name or ID of the target entity
+        relationship_type: Type of relationship (e.g., 'teammate', 'rival', 'similar')
+        strength: Optional relationship strength (0-1 float)
+        metadata: Optional metadata for the relationship
+    
+    Returns:
+        tuple: (success_bool, message_or_id)
+    """
+    try:
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor()
+            
+            # Get entity IDs if names are provided
+            source_id = source_entity
+            target_id = target_entity
+            
+            if isinstance(source_entity, str):
+                cursor.execute("SELECT id FROM entities WHERE name = %s", (source_entity,))
+                source_result = cursor.fetchone()
+                if not source_result:
+                    return False, f"Source entity '{source_entity}' not found"
+                source_id = source_result[0]
+            
+            if isinstance(target_entity, str):
+                cursor.execute("SELECT id FROM entities WHERE name = %s", (target_entity,))
+                target_result = cursor.fetchone()
+                if not target_result:
+                    return False, f"Target entity '{target_entity}' not found"
+                target_id = target_result[0]
+            
+            # Prepare metadata
+            if metadata is not None and not isinstance(metadata, str):
+                # Convert to JSON string for SQLite compatibility
+                metadata = json.dumps(metadata)
+            
+            # Check if relationship already exists
+            cursor.execute(
+                """
+                SELECT id FROM entity_relationships 
+                WHERE source_entity_id = %s AND target_entity_id = %s AND relationship_type = %s
+                """, 
+                (source_id, target_id, relationship_type)
+            )
+            
+            existing = cursor.fetchone()
+            if existing:
+                # Update existing relationship
+                cursor.execute(
+                    """
+                    UPDATE entity_relationships 
+                    SET strength = %s, metadata = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING id
+                    """,
+                    (strength, metadata, existing[0])
+                )
+                
+                relationship_id = cursor.fetchone()[0]
+                conn.commit()
+                
+                # Invalidate cache
+                if isinstance(source_entity, str):
+                    invalidate_entity_cache(source_entity)
+                if isinstance(target_entity, str):
+                    invalidate_entity_cache(target_entity)
+                
+                return True, f"Updated relationship (ID: {relationship_id})"
+            
+            # Create new relationship
+            cursor.execute(
+                """
+                INSERT INTO entity_relationships 
+                (source_entity_id, target_entity_id, relationship_type, strength, metadata)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (source_id, target_id, relationship_type, strength, metadata)
+            )
+            
+            relationship_id = cursor.fetchone()[0]
+            conn.commit()
+            
+            # Invalidate cache
+            if isinstance(source_entity, str):
+                invalidate_entity_cache(source_entity)
+            if isinstance(target_entity, str):
+                invalidate_entity_cache(target_entity)
+            
+            return True, relationship_id
+    
+    except Exception as e:
+        print(f"Error creating entity relationship: {e}")
+        return False, f"Error: {str(e)}"
+
+@with_retry(max_retries=3)
+def get_entity_relationships(entity, relationship_type=None, direction="both"):
+    """
+    Get relationships for an entity.
+    
+    Args:
+        entity: Name or ID of the entity
+        relationship_type: Optional filter by relationship type
+        direction: 'outgoing', 'incoming', or 'both'
+    
+    Returns:
+        list: Relationships
+    """
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get entity ID if name is provided
+            entity_id = entity
+            
+            if isinstance(entity, str):
+                cursor.execute("SELECT id FROM entities WHERE name = %s", (entity,))
+                entity_result = cursor.fetchone()
+                if not entity_result:
+                    return []
+                entity_id = entity_result['id']
+            
+            # Build query based on direction
+            if direction == "outgoing" or direction == "both":
+                # Get outgoing relationships
+                query_out = """
+                    SELECT r.id, r.relationship_type, r.strength, r.metadata, 
+                           e.id as target_id, e.name as target_name, 
+                           e.type as target_type, e.category as target_category,
+                           r.created_at, r.updated_at, 'outgoing' as direction
+                    FROM entity_relationships r
+                    JOIN entities e ON r.target_entity_id = e.id
+                    WHERE r.source_entity_id = %s
+                """
+                params_out = [entity_id]
+                
+                if relationship_type:
+                    query_out += " AND r.relationship_type = %s"
+                    params_out.append(relationship_type)
+            
+            if direction == "incoming" or direction == "both":
+                # Get incoming relationships
+                query_in = """
+                    SELECT r.id, r.relationship_type, r.strength, r.metadata, 
+                           e.id as source_id, e.name as source_name, 
+                           e.type as source_type, e.category as source_category,
+                           r.created_at, r.updated_at, 'incoming' as direction
+                    FROM entity_relationships r
+                    JOIN entities e ON r.source_entity_id = e.id
+                    WHERE r.target_entity_id = %s
+                """
+                params_in = [entity_id]
+                
+                if relationship_type:
+                    query_in += " AND r.relationship_type = %s"
+                    params_in.append(relationship_type)
+            
+            # Execute queries based on direction
+            relationships = []
+            
+            if direction == "outgoing" or direction == "both":
+                cursor.execute(query_out, params_out)
+                relationships.extend(cursor.fetchall())
+            
+            if direction == "incoming" or direction == "both":
+                cursor.execute(query_in, params_in)
+                relationships.extend(cursor.fetchall())
+            
+            # Parse metadata if it's stored as JSON string
+            for rel in relationships:
+                if isinstance(rel['metadata'], str):
+                    try:
+                        rel['metadata'] = json.loads(rel['metadata'])
+                    except json.JSONDecodeError:
+                        rel['metadata'] = {}
+            
+            return relationships
+    
+    except Exception as e:
+        print(f"Error getting entity relationships: {e}")
+        return []
+
+@with_retry(max_retries=3)
+def delete_entity_relationship(relationship_id):
+    """
+    Delete an entity relationship.
+    
+    Args:
+        relationship_id: ID of the relationship to delete
+    
+    Returns:
+        tuple: (success_bool, message)
+    """
+    try:
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor()
+            
+            # Get affected entities for cache invalidation
+            cursor.execute(
+                """
+                SELECT source_entity_id, target_entity_id FROM entity_relationships WHERE id = %s
+                """, 
+                (relationship_id,)
+            )
+            
+            relationship = cursor.fetchone()
+            if not relationship:
+                return False, f"Relationship {relationship_id} not found"
+            
+            source_id, target_id = relationship
+            
+            # Delete the relationship
+            cursor.execute(
+                "DELETE FROM entity_relationships WHERE id = %s",
+                (relationship_id,)
+            )
+            
+            conn.commit()
+            
+            # Get entity names for cache invalidation
+            cursor.execute(
+                "SELECT name FROM entities WHERE id IN (%s, %s)",
+                (source_id, target_id)
+            )
+            
+            entity_names = [row[0] for row in cursor.fetchall()]
+            
+            # Invalidate cache for affected entities
+            for name in entity_names:
+                invalidate_entity_cache(name)
+            
+            return True, "Relationship deleted successfully"
+    
+    except Exception as e:
+        print(f"Error deleting entity relationship: {e}")
+        return False, f"Error: {str(e)}"
+
+@with_retry(max_retries=3)
+def find_related_entities(entity, relationship_types=None, min_strength=None, max_results=10):
+    """
+    Find entities related to the given entity.
+    
+    Args:
+        entity: Name or ID of the entity
+        relationship_types: Optional list of relationship types to include
+        min_strength: Optional minimum relationship strength
+        max_results: Maximum number of results to return
+    
+    Returns:
+        list: Related entities with relationship info
+    """
+    try:
+        with DatabaseConnection(psycopg2.extras.RealDictCursor) as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get entity ID if name is provided
+            entity_id = entity
+            
+            if isinstance(entity, str):
+                cursor.execute("SELECT id FROM entities WHERE name = %s", (entity,))
+                entity_result = cursor.fetchone()
+                if not entity_result:
+                    return []
+                entity_id = entity_result['id']
+            
+            # Base query for both directions
+            query_parts = []
+            params = []
+            
+            # Outgoing relationships
+            query_out = """
+                SELECT e.id, e.name, e.type, e.category, e.subcategory,
+                       r.relationship_type, r.strength, r.metadata, 'outgoing' as direction
+                FROM entity_relationships r
+                JOIN entities e ON r.target_entity_id = e.id
+                WHERE r.source_entity_id = %s
+            """
+            params.append(entity_id)
+            
+            # Incoming relationships
+            query_in = """
+                SELECT e.id, e.name, e.type, e.category, e.subcategory,
+                       r.relationship_type, r.strength, r.metadata, 'incoming' as direction
+                FROM entity_relationships r
+                JOIN entities e ON r.source_entity_id = e.id
+                WHERE r.target_entity_id = %s
+            """
+            params.append(entity_id)
+            
+            # Add relationship type filter if specified
+            if relationship_types:
+                type_placeholders = ', '.join(['%s'] * len(relationship_types))
+                type_condition = f"AND r.relationship_type IN ({type_placeholders})"
+                query_out += f" {type_condition}"
+                query_in += f" {type_condition}"
+                params.extend(relationship_types * 2)  # Add for both queries
+            
+            # Add strength filter if specified
+            if min_strength is not None:
+                query_out += " AND r.strength >= %s"
+                query_in += " AND r.strength >= %s"
+                params.extend([min_strength] * 2)  # Add for both queries
+            
+            # Combine queries
+            full_query = f"({query_out}) UNION ALL ({query_in}) ORDER BY strength DESC LIMIT %s"
+            params.append(max_results)
+            
+            # Execute query
+            cursor.execute(full_query, params)
+            related_entities = cursor.fetchall()
+            
+            # Parse metadata if it's stored as JSON string
+            for entity in related_entities:
+                if isinstance(entity['metadata'], str):
+                    try:
+                        entity['metadata'] = json.loads(entity['metadata'])
+                    except json.JSONDecodeError:
+                        entity['metadata'] = {}
+            
+            return related_entities
+    
+    except Exception as e:
+        print(f"Error finding related entities: {e}")
+        return []
 
 # Initialize database on module import
 initialize_database()

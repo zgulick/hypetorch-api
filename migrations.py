@@ -304,6 +304,74 @@ MIGRATIONS = [
             CREATE INDEX IF NOT EXISTS idx_component_metrics_entity_id ON component_metrics(entity_id);
             CREATE INDEX IF NOT EXISTS idx_component_metrics_metric_type ON component_metrics(metric_type);
         """
+    },
+    {
+        "version": "1.0.5",
+        "description": "Create entity relationships table",
+        "sql": """
+            -- Create the relationships table
+            CREATE TABLE IF NOT EXISTS entity_relationships (
+                id SERIAL PRIMARY KEY,
+                source_entity_id INTEGER NOT NULL REFERENCES entities(id),
+                target_entity_id INTEGER NOT NULL REFERENCES entities(id),
+                relationship_type TEXT NOT NULL,
+                strength FLOAT,
+                metadata JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                -- Prevent duplicate relationships
+                UNIQUE(source_entity_id, target_entity_id, relationship_type)
+            );
+        
+            -- Create indexes for efficient lookups
+            CREATE INDEX IF NOT EXISTS idx_relationships_source ON entity_relationships(source_entity_id);
+            CREATE INDEX IF NOT EXISTS idx_relationships_target ON entity_relationships(target_entity_id);
+            CREATE INDEX IF NOT EXISTS idx_relationships_type ON entity_relationships(relationship_type);
+        
+            -- Create trigger for updated_at
+            CREATE OR REPLACE FUNCTION update_entity_relationship_timestamp()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.updated_at = CURRENT_TIMESTAMP;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        
+            DROP TRIGGER IF EXISTS update_entity_relationship_timestamp ON entity_relationships;
+            CREATE TRIGGER update_entity_relationship_timestamp
+            BEFORE UPDATE ON entity_relationships
+            FOR EACH ROW
+            EXECUTE FUNCTION update_entity_relationship_timestamp();
+        """,
+        "sqlite_sql": """
+            -- Create the relationships table for SQLite
+            CREATE TABLE IF NOT EXISTS entity_relationships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_entity_id INTEGER NOT NULL,
+                target_entity_id INTEGER NOT NULL,
+                relationship_type TEXT NOT NULL,
+                strength REAL,
+                metadata TEXT DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (source_entity_id) REFERENCES entities(id),
+                FOREIGN KEY (target_entity_id) REFERENCES entities(id),
+                UNIQUE(source_entity_id, target_entity_id, relationship_type)
+            );
+        
+            -- Create indexes for SQLite
+            CREATE INDEX IF NOT EXISTS idx_relationships_source ON entity_relationships(source_entity_id);
+            CREATE INDEX IF NOT EXISTS idx_relationships_target ON entity_relationships(target_entity_id);
+            CREATE INDEX IF NOT EXISTS idx_relationships_type ON entity_relationships(relationship_type);
+        
+            -- Create trigger for updated_at in SQLite
+            CREATE TRIGGER IF NOT EXISTS update_entity_relationship_timestamp
+            AFTER UPDATE ON entity_relationships
+            FOR EACH ROW
+            BEGIN
+                UPDATE entity_relationships SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+            END;
+        """
     }
 ]
 
