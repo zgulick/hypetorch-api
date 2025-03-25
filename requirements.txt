@@ -51,6 +51,7 @@ pytrends==4.9.2
 pytz==2025.1
 requests==2.32.3
 rich==13.9.4
+schedule==1.2.0
 seaborn==0.13.2
 setuptools==75.8.0
 shellingham==1.5.4
