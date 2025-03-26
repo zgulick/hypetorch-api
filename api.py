@@ -126,6 +126,12 @@ async def token_tracking_middleware(request: Request, call_next):
     if not request.url.path.startswith("/api/") or request.url.path == "/api/health-check":
         return await call_next(request)
     
+    # DEVELOPMENT MODE: Skip token check when in development
+    dev_mode = os.environ.get("DEVELOPMENT_MODE", "false").lower() == "true"
+    if dev_mode:
+        # Just proceed without token deduction in development mode
+        return await call_next(request)
+    
     from token_manager import calculate_token_cost, deduct_tokens
     import uuid
     
@@ -161,7 +167,7 @@ async def token_tracking_middleware(request: Request, call_next):
         "query_params": str(request.query_params)
     }
     
-    #Check and deduct tokens if we have a valid API key ID
+    # Check and deduct tokens if we have a valid API key ID
     token_deduction_success = False
     deduction_message = "No API key provided"
     
