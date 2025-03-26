@@ -6,6 +6,13 @@ from datetime import datetime
 import os
 from api_key_manager import validate_api_key
 
+# Import token config
+try:
+    from token_config import ENABLE_TOKEN_CHECKING
+except ImportError:
+    # Default to disabled if config file doesn't exist
+    ENABLE_TOKEN_CHECKING = False
+
 # Define the API key header
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -22,6 +29,16 @@ async def get_api_key(api_key: str = Depends(API_KEY_HEADER)) -> Optional[dict]:
     Raises:
         HTTPException: If the API key is invalid or missing
     """
+    # Skip validation if token checking is disabled
+    if not ENABLE_TOKEN_CHECKING:
+        return {
+            "id": 0,
+            "client_name": "Development",
+            "is_active": True,
+            "created_at": datetime.now().isoformat(),
+            "token_balance": 1000000
+        }
+    
     # Special case: development mode or using dev key
     dev_mode = os.environ.get("DEVELOPMENT_MODE", "false").lower() == "true"
     dev_key = os.environ.get("DEV_API_KEY", "")
@@ -68,6 +85,16 @@ def api_key_required(request: Request):
     Raises:
         HTTPException: If the API key is invalid or missing
     """
+    # Skip validation if token checking is disabled
+    if not ENABLE_TOKEN_CHECKING:
+        return {
+            "id": 0,
+            "client_name": "Development",
+            "is_active": True,
+            "created_at": datetime.now(),
+            "token_balance": 1000000
+        }
+    
     # Extract API key from header
     api_key = request.headers.get("X-API-Key")
     

@@ -122,6 +122,17 @@ async def add_cache_headers(request: Request, call_next):
 @app.middleware("http")
 async def token_tracking_middleware(request: Request, call_next):
     """Middleware to track and deduct tokens for API usage."""
+    # Import token config
+    try:
+        from token_config import ENABLE_TOKEN_CHECKING
+    except ImportError:
+        # Default to disabled if config file doesn't exist
+        ENABLE_TOKEN_CHECKING = False
+    
+    # Skip token checking if disabled in config
+    if not ENABLE_TOKEN_CHECKING:
+        return await call_next(request)
+    """Middleware to track and deduct tokens for API usage."""
     # Skip token tracking for non-API routes and health checks
     if not request.url.path.startswith("/api/") or request.url.path == "/api/health-check":
         return await call_next(request)
