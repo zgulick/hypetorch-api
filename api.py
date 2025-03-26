@@ -126,12 +126,21 @@ async def token_tracking_middleware(request: Request, call_next):
     if not request.url.path.startswith("/api/") or request.url.path == "/api/health-check":
         return await call_next(request)
     
-    # DEVELOPMENT MODE: Skip token check when in development
-    dev_mode = os.environ.get("DEVELOPMENT_MODE", "false").lower() == "true"
-    if dev_mode:
-        # Just proceed without token deduction in development mode
-        return await call_next(request)
+    # Get API key from header
+    api_key = request.headers.get("X-API-Key")
     
+    # DEVELOPMENT MODE: Always allow requests regardless of token balance
+    # This ensures all API endpoints work for development
+    dev_mode = os.environ.get("DEVELOPMENT_MODE", "false").lower() == "true"
+    dev_key = os.environ.get("DEV_API_KEY", "")
+    
+    # Allow all requests from development mode or with dev key
+    if dev_mode or (api_key and api_key == dev_key):
+        # Process the request without any token deduction
+        response = await call_next(request)
+        return response
+    
+    # For production: Normal token processing continues below
     from token_manager import calculate_token_cost, deduct_tokens
     import uuid
     
@@ -142,10 +151,7 @@ async def token_tracking_middleware(request: Request, call_next):
     # Get client information
     client_ip = request.client.host if request.client else "unknown"
     
-    # Get API key from header
-    api_key = request.headers.get("X-API-Key")
     api_key_id = None
-    
     # Process only if API key is provided
     if api_key:
         # Get API key ID from the database

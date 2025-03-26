@@ -2,7 +2,8 @@
 from fastapi import Request, HTTPException, Depends
 from fastapi.security import APIKeyHeader
 from typing import Optional
-
+from datetime import datetime
+import os
 from api_key_manager import validate_api_key
 
 # Define the API key header
@@ -21,6 +22,20 @@ async def get_api_key(api_key: str = Depends(API_KEY_HEADER)) -> Optional[dict]:
     Raises:
         HTTPException: If the API key is invalid or missing
     """
+    # Special case: development mode or using dev key
+    dev_mode = os.environ.get("DEVELOPMENT_MODE", "false").lower() == "true"
+    dev_key = os.environ.get("DEV_API_KEY", "")
+    
+    if dev_mode or api_key == dev_key:
+        # In development mode or with dev key, return a dummy key info
+        return {
+            "id": 0,
+            "client_name": "Development",
+            "is_active": True,
+            "created_at": datetime.now().isoformat(),
+            "token_balance": 1000000
+        }
+    
     if not api_key:
         raise HTTPException(
             status_code=401,
