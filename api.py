@@ -34,6 +34,7 @@ import logging
 from api_models import EntityCreate, EntityUpdate
 import hashlib
 from fastapi.responses import Response
+from api_v2 import v2_router
 
 # Initialize the database
 try:
@@ -694,6 +695,17 @@ def get_entity_metrics(entity_id: str, key_info: dict = Depends(get_api_key)):
     """Returns engagement metrics for a specific entity."""
     try:
         data = load_data()
+        print(f"DEBUG - Entity metrics request for: {entity_id}")
+        print(f"DEBUG - Data keys: {list(data.keys())}")
+        for key in ["mention_counts", "talk_time_counts", "player_sentiment_scores", "rodmn_scores", "hype_scores"]:
+            print(f"DEBUG - {key} exists: {key in data}")
+            if key in data:
+                sample_count = min(2, len(data[key]))
+                if sample_count > 0:
+                    sample = dict(list(data[key].items())[:sample_count])
+                    print(f"DEBUG - {key} sample: {sample}")
+                else:
+                    print(f"DEBUG - {key} is empty")
         if not data:
             raise HTTPException(status_code=500, detail="Failed to load data")
             
@@ -922,6 +934,51 @@ def debug_database(key_info: dict = Depends(get_api_key)):
         "current_directory": os.getcwd(),
         "render_directory_exists": os.path.exists("/opt/render/project/src")
     }
+
+@app.get("/api/debug/entity/{entity_id}")
+def debug_entity(entity_id: str, key_info: dict = Depends(get_api_key)):
+    """Debug endpoint to see all data available for a specific entity."""
+    data = load_data()
+    entity_name = entity_id.replace("_", " ")
+    entity_lower = entity_name.lower()
+    
+    # Create a debug report
+    report = {
+        "entity": entity_name,
+        "entity_lower": entity_lower,
+        "data_keys": list(data.keys()),
+        "metrics_found": {}
+    }
+    
+    # Check each key we expect
+    for key in ["mention_counts", "talk_time_counts", "player_sentiment_scores", "rodmn_scores", "hype_scores"]:
+        if key in data:
+            # Gather keys for this metric to help with debugging
+            sample_keys = list(data[key].keys())[:5]  # First 5 keys
+            report[f"{key}_sample_keys"] = sample_keys
+            
+            # Check for exact match
+            exact_match = entity_name in data[key]
+            report["metrics_found"][f"{key}_exact_match"] = exact_match
+            
+            # Check for case-insensitive match
+            case_insensitive = any(k.lower() == entity_lower for k in data[key])
+            report["metrics_found"][f"{key}_case_insensitive"] = case_insensitive
+            
+            # Check for partial match (e.g. first or last name)
+            partial_matches = [k for k in data[key] if entity_lower in k.lower()]
+            report["metrics_found"][f"{key}_partial_matches"] = partial_matches
+            
+            # Get value if available
+            if exact_match:
+                report[key] = data[key][entity_name]
+            elif case_insensitive:
+                # Find the actual key
+                actual_key = next(k for k in data[key] if k.lower() == entity_lower)
+                report[key] = data[key][actual_key]
+                report[f"{key}_actual_key"] = actual_key
+    
+    return report
 
 @app.get("/api/health-check")
 def health_check():
@@ -1414,6 +1471,8 @@ import_entities_to_database()
 
 # Include versioned routes
 app.include_router(v1_router, prefix="/api")
+# Include v2 routes
+app.include_router(v2_router, prefix="/api")
 
 # Initialize scheduler if enabled
 if os.environ.get("ENABLE_SCHEDULED_MAINTENANCE", "true").lower() == "true":
