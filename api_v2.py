@@ -4,15 +4,19 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import time
 from auth_middleware import get_api_key
-from database import get_entities, get_connection
+from database import (
+    get_entities,
+    get_entity_by_name,
+    get_current_metrics,
+    get_historical_metrics,
+    load_latest_data,
+    get_hype_score_history,
+    get_entities_by_category,
+    get_latest_hype_scores
+)
 from api_utils import StandardResponse
 from models_v2 import BulkEntitiesRequest, EntityData, EntityMetrics
-from database import (
-    get_entities_by_category,
-    get_latest_hype_scores,
-    get_entity_by_name,
-    get_current_metrics
-)
+
 # Create the v2 router
 v2_router = APIRouter(prefix="/v2")
 
@@ -167,3 +171,165 @@ def get_dashboard_data(key_info: dict = Depends(get_api_key)):
             status_code=500,
             details=str(e)
         )
+    
+@v2_router.post("/entities/bulk")
+def get_bulk_entities(
+    request: BulkEntitiesRequest,
+    key_info: dict = Depends(get_api_key)
+):
+    """Get data for multiple entities in one request."""
+    start_time = time.time()
+    
+    try:
+        results = []
+        
+        for entity_name in request.entity_names:
+            # Get entity details
+            entity = get_entity_by_name(entity_name)
+            
+            if not entity:
+                # Skip if entity not found
+                results.append({
+                    "name": entity_name,
+                    "error": "Entity not found"
+                })
+                continue
+            
+            # Start with basic entity data
+            entity_data = dict(entity)
+            
+            # Get current metrics if requested
+            if request.metrics:
+                # Get latest data for this entity
+                latest_data = load_latest_data()
+                
+                entity_data["metrics"] = {}
+                
+                # Add requested metrics
+                for metric in request.metrics:
+                    if metric == "hype_score":
+                        entity_data["metrics"]["hype_score"] = latest_data.get("hype_scores", {}).get(entity_name)
+                    elif metric == "rodmn_score":
+                        entity_data["metrics"]["rodmn_score"] = latest_data.get("rodmn_scores", {}).get(entity_name)
+                    elif metric == "talk_time":
+                        entity_data["metrics"]["talk_time"] = latest_data.get("talk_time_counts", {}).get(entity_name)
+                    elif metric == "mentions":
+                        entity_data["metrics"]["mentions"] = latest_data.get("mention_counts", {}).get(entity_name)
+                    elif metric == "sentiment":
+                        entity_data["metrics"]["sentiment"] = latest_data.get("player_sentiment_scores", {}).get(entity_name, [])
+                    elif metric == "wikipedia_views":
+                        entity_data["metrics"]["wikipedia_views"] = latest_data.get("wikipedia_views", {}).get(entity_name)
+                    elif metric == "reddit_mentions":
+                        entity_data["metrics"]["reddit_mentions"] = latest_data.get("reddit_mentions", {}).get(entity_name)
+                    elif metric == "google_trends":
+                        entity_data["metrics"]["google_trends"] = latest_data.get("google_trends", {}).get(entity_name)
+            
+            # Get historical data if requested
+            if request.include_history:
+                entity_data["history"] = {}
+                
+                # Get history for each requested metric
+                for metric in (request.metrics or ["hype_score"]):
+                    if metric == "hype_score":
+                        # Get HYPE score history
+                        entity = get_entity_by_name(entity_name)
+                        if entity:
+                            history = get_hype_score_history(entity["id"], request.history_days)
+                        entity_data["history"]["hype_score"] = [
+                            {
+                                "timestamp": str(h["timestamp"]),
+                                "value": h["hype_score"]
+                            }
+                            for h in history
+                        ]
+            
+            results.append(entity_data)
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=results,
+            metadata={
+                "requested": len(request.entity_names),
+                "found": len([r for r in results if "error" not in r]),
+                "processing_time_ms": round(processing_time, 2)
+            }
+        )
+    except Exception as e:
+        return StandardResponse.error(
+            message="Failed to retrieve bulk entity data",
+            status_code=500,
+            details=str(e)
+        )
+
+@v2_router.post("/metrics/compare")
+def compare_entities(
+    request: BulkEntitiesRequest,
+    key_info: dict = Depends(get_api_key)
+):
+    """Compare multiple entities across requested metrics."""
+    start_time = time.time()
+    
+    try:
+        # Get latest data
+        latest_data = load_latest_data()
+        
+        # Build comparison data
+        comparison = {
+            "entities": request.entity_names,
+            "metrics": {}
+        }
+        
+        # If no metrics specified, use defaults
+        metrics_to_compare = request.metrics or ["hype_score", "rodmn_score", "mentions", "talk_time"]
+        
+        # For each metric, get values for all entities
+        for metric in metrics_to_compare:
+            comparison["metrics"][metric] = {}
+            
+            for entity_name in request.entity_names:
+                if metric == "hype_score":
+                    value = latest_data.get("hype_scores", {}).get(entity_name, 0)
+                elif metric == "rodmn_score":
+                    value = latest_data.get("rodmn_scores", {}).get(entity_name, 0)
+                elif metric == "talk_time":
+                    value = latest_data.get("talk_time_counts", {}).get(entity_name, 0)
+                elif metric == "mentions":
+                    value = latest_data.get("mention_counts", {}).get(entity_name, 0)
+                elif metric == "wikipedia_views":
+                    value = latest_data.get("wikipedia_views", {}).get(entity_name, 0)
+                elif metric == "reddit_mentions":
+                    value = latest_data.get("reddit_mentions", {}).get(entity_name, 0)
+                elif metric == "google_trends":
+                    value = latest_data.get("google_trends", {}).get(entity_name, 0)
+                else:
+                    value = 0
+                    
+                comparison["metrics"][metric][entity_name] = value
+        
+        # Add rankings for each metric
+        comparison["rankings"] = {}
+        for metric, values in comparison["metrics"].items():
+            # Sort entities by this metric
+            sorted_entities = sorted(values.items(), key=lambda x: x[1], reverse=True)
+            comparison["rankings"][metric] = [
+                {"rank": i+1, "entity": name, "value": value}
+                for i, (name, value) in enumerate(sorted_entities)
+            ]
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=comparison,
+            metadata={
+                "entity_count": len(request.entity_names),
+                "metric_count": len(metrics_to_compare),
+                "processing_time_ms": round(processing_time, 2)
+            }
+        )
+    except Exception as e:
+        return StandardResponse.error(
+            message="Failed to compare entities",
+            status_code=500,
+            details=str(e)
+        )    
