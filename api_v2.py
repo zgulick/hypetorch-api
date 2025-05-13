@@ -16,7 +16,8 @@ from database import (
     get_hype_score_history,
     get_entities_by_category,
     get_metric_history,
-    get_latest_hype_scores
+    get_latest_hype_scores,
+    search_entities
 )
 
 from api_utils import StandardResponse
@@ -53,6 +54,42 @@ def verify_api_key(key_info: dict = Depends(get_api_key)):
             "timestamp": time.time()
         }
     )
+
+@v2_router.get("/entities/search")
+def search_entities_v2(
+    q: str = Query(..., description="Search query"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum results to return"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Search for entities by name.
+    """
+    start_time = time.time()
+    
+    try:
+        # Use the search function from database
+        results = search_entities(q, category, limit)
+        
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=results,
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "query": q,
+                "category": category,
+                "count": len(results)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error searching entities: {e}")
+        return StandardResponse.error(
+            message="Failed to search entities",
+            status_code=500,
+            details=str(e)
+        )
 
 # Entity endpoints
 @v2_router.get("/entities")
