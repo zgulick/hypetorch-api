@@ -192,6 +192,71 @@ def get_entities(category=None, subcategory=None):
     
     return execute_query(query, params)
 
+def get_entity_current_metrics(entity_id, metric_types=None):
+    """Get current metrics for an entity from the current_metrics table."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        if metric_types:
+            # Get specific metrics
+            placeholders = ', '.join(['%s'] * len(metric_types))
+            cursor.execute(f"""
+                SELECT metric_type, value
+                FROM current_metrics
+                WHERE entity_id = %s AND metric_type IN ({placeholders})
+            """, [entity_id] + metric_types)
+        else:
+            # Get all metrics
+            cursor.execute("""
+                SELECT metric_type, value
+                FROM current_metrics
+                WHERE entity_id = %s
+            """, (entity_id,))
+        
+        results = cursor.fetchall()
+        
+        # Convert to dictionary
+        metrics = {row['metric_type']: row['value'] for row in results}
+        
+        cursor.close()
+        conn.close()
+        
+        return metrics
+    except Exception as e:
+        logger.error(f"Error getting current metrics: {e}")
+        return {}
+
+def get_metric_history(entity_id, metric_type, limit=30):
+    """Get historical values for a specific metric."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cursor.execute("""
+            SELECT value, timestamp
+            FROM historical_metrics
+            WHERE entity_id = %s AND metric_type = %s
+            ORDER BY timestamp DESC
+            LIMIT %s
+        """, (entity_id, metric_type, limit))
+        
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Format for API response
+        return [
+            {
+                "value": row['value'],
+                "timestamp": row['timestamp'].isoformat() if hasattr(row['timestamp'], 'isoformat') else str(row['timestamp'])
+            }
+            for row in results
+        ]
+    except Exception as e:
+        logger.error(f"Error getting metric history: {e}")
+        return []
+
 def get_entity_by_name(name):
     """
     Get entity details by name.
