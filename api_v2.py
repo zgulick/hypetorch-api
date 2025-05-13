@@ -121,23 +121,45 @@ def get_dashboard_data(key_info: dict = Depends(get_api_key)):
         # Get top entities by HYPE score
         top_hype = get_latest_hype_scores(limit=10)
         
-        # Get all entities with current metrics
+        # Get all entities
         entities = get_entities()
+        
+        # Get ALL current metrics in one query
         all_metrics = get_current_metrics()
         
-        # Group metrics by entity
+        # Debug print to see what we're getting
+        print(f"Found {len(all_metrics)} metrics")
+        if all_metrics:
+            print(f"Sample metric: {all_metrics[0]}")
+        
+        # Group metrics by entity_id
         metrics_by_entity = {}
         for metric in all_metrics:
             entity_id = metric["entity_id"]
+            metric_type = metric["metric_type"]
+            value = metric["value"]
+            
             if entity_id not in metrics_by_entity:
                 metrics_by_entity[entity_id] = {}
-            metrics_by_entity[entity_id][metric["metric_type"]] = metric["value"]
+            
+            metrics_by_entity[entity_id][metric_type] = value
+        
+        # Debug print
+        print(f"Metrics grouped for {len(metrics_by_entity)} entities")
         
         # Add metrics to entities
         entities_with_metrics = []
         for entity in entities:
             entity_data = dict(entity)
-            entity_metrics = metrics_by_entity.get(entity["id"], {})
+            entity_id = entity["id"]
+            
+            # Get metrics for this entity
+            entity_metrics = metrics_by_entity.get(entity_id, {})
+            
+            # Debug print for first few entities
+            if len(entities_with_metrics) < 3:
+                print(f"Entity {entity['name']} (ID: {entity_id}) has metrics: {entity_metrics}")
+            
             entity_data["metrics"] = {
                 "hype_score": entity_metrics.get("hype_score"),
                 "rodmn_score": entity_metrics.get("rodmn_score"),
@@ -152,7 +174,7 @@ def get_dashboard_data(key_info: dict = Depends(get_api_key)):
             "top_hype": [{"name": item["name"], "score": item["score"]} for item in top_hype],
             "summary": {
                 "total_entities": len(entities),
-                "total_with_scores": len([e for e in entities_with_metrics if e["metrics"].get("hype_score")]),
+                "total_with_scores": len([e for e in entities_with_metrics if e["metrics"].get("hype_score") is not None]),
                 "last_updated": datetime.now().isoformat()
             }
         }
@@ -162,10 +184,17 @@ def get_dashboard_data(key_info: dict = Depends(get_api_key)):
         return StandardResponse.success(
             data=dashboard,
             metadata={
-                "processing_time_ms": round(processing_time, 2)
+                "processing_time_ms": round(processing_time, 2),
+                "debug": {
+                    "metrics_found": len(all_metrics),
+                    "entities_found": len(entities),
+                    "metrics_by_entity_count": len(metrics_by_entity)
+                }
             }
         )
     except Exception as e:
+        import traceback
+        print(f"Error in dashboard: {traceback.format_exc()}")
         return StandardResponse.error(
             message="Failed to retrieve dashboard data",
             status_code=500,
@@ -183,12 +212,26 @@ def get_bulk_entities(
     try:
         results = []
         
+        # Get all current metrics once
+        all_metrics = get_current_metrics()
+        
+        # Group metrics by entity_id
+        metrics_by_entity = {}
+        for metric in all_metrics:
+            entity_id = metric["entity_id"]
+            metric_type = metric["metric_type"]
+            value = metric["value"]
+            
+            if entity_id not in metrics_by_entity:
+                metrics_by_entity[entity_id] = {}
+            
+            metrics_by_entity[entity_id][metric_type] = value
+        
         for entity_name in request.entity_names:
             # Get entity details
             entity = get_entity_by_name(entity_name)
             
             if not entity:
-                # Skip if entity not found
                 results.append({
                     "name": entity_name,
                     "error": "Entity not found"
@@ -197,51 +240,32 @@ def get_bulk_entities(
             
             # Start with basic entity data
             entity_data = dict(entity)
+            entity_id = entity["id"]
             
             # Get current metrics if requested
             if request.metrics:
-                # Get latest data for this entity
-                latest_data = load_latest_data()
-                
                 entity_data["metrics"] = {}
+                
+                # Get metrics for this entity
+                entity_metrics = metrics_by_entity.get(entity_id, {})
                 
                 # Add requested metrics
                 for metric in request.metrics:
-                    if metric == "hype_score":
-                        entity_data["metrics"]["hype_score"] = latest_data.get("hype_scores", {}).get(entity_name)
-                    elif metric == "rodmn_score":
-                        entity_data["metrics"]["rodmn_score"] = latest_data.get("rodmn_scores", {}).get(entity_name)
-                    elif metric == "talk_time":
-                        entity_data["metrics"]["talk_time"] = latest_data.get("talk_time_counts", {}).get(entity_name)
-                    elif metric == "mentions":
-                        entity_data["metrics"]["mentions"] = latest_data.get("mention_counts", {}).get(entity_name)
-                    elif metric == "sentiment":
-                        entity_data["metrics"]["sentiment"] = latest_data.get("player_sentiment_scores", {}).get(entity_name, [])
-                    elif metric == "wikipedia_views":
-                        entity_data["metrics"]["wikipedia_views"] = latest_data.get("wikipedia_views", {}).get(entity_name)
-                    elif metric == "reddit_mentions":
-                        entity_data["metrics"]["reddit_mentions"] = latest_data.get("reddit_mentions", {}).get(entity_name)
-                    elif metric == "google_trends":
-                        entity_data["metrics"]["google_trends"] = latest_data.get("google_trends", {}).get(entity_name)
+                    entity_data["metrics"][metric] = entity_metrics.get(metric)
             
             # Get historical data if requested
             if request.include_history:
                 entity_data["history"] = {}
                 
-                # Get history for each requested metric
-                for metric in (request.metrics or ["hype_score"]):
-                    if metric == "hype_score":
-                        # Get HYPE score history
-                        entity = get_entity_by_name(entity_name)
-                        if entity:
-                            history = get_hype_score_history(entity["id"], request.history_days)
-                        entity_data["history"]["hype_score"] = [
-                            {
-                                "timestamp": str(h["timestamp"]),
-                                "value": h["hype_score"]
-                            }
-                            for h in history
-                        ]
+                # Get HYPE score history
+                history = get_hype_score_history(entity_id, request.history_days)
+                entity_data["history"]["hype_score"] = [
+                    {
+                        "timestamp": str(h["timestamp"]),
+                        "value": h["score"]
+                    }
+                    for h in history
+                ]
             
             results.append(entity_data)
         
