@@ -68,8 +68,13 @@ def search_entities_v2(
     start_time = time.time()
     
     try:
-        # Use the search function from database
-        results = search_entities(q, category, limit)
+        # Debug logging
+        logger.info(f"Search params: q={q}, category={category}, limit={limit}")
+        
+        # Try with explicit keyword arguments
+        results = search_entities(query=q, category=category, limit=limit)
+        
+        logger.info(f"Search returned {len(results)} results")
         
         # Calculate processing time
         processing_time = (time.time() - start_time) * 1000
@@ -85,12 +90,14 @@ def search_entities_v2(
         )
     except Exception as e:
         logger.error(f"Error searching entities: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return StandardResponse.error(
             message="Failed to search entities",
             status_code=500,
             details=str(e)
         )
-
+    
 # Entity endpoints
 @v2_router.get("/entities")
 def get_all_entities(
