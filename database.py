@@ -257,6 +257,92 @@ def get_metric_history(entity_id, metric_type, limit=30):
         logger.error(f"Error getting metric history: {e}")
         return []
 
+def delete_entity(entity_id):
+    """Delete an entity and all its related data."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Delete related data first (foreign key constraints)
+        cursor.execute("DELETE FROM historical_metrics WHERE entity_id = %s", (entity_id,))
+        cursor.execute("DELETE FROM current_metrics WHERE entity_id = %s", (entity_id,))
+        cursor.execute("DELETE FROM entities WHERE id = %s", (entity_id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return True, "Entity deleted successfully"
+    except Exception as e:
+        logger.error(f"Error deleting entity: {e}")
+        if conn:
+            conn.rollback()
+        return False, str(e)
+
+def search_entities(query, category=None, limit=20):
+    """Search for entities by name."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        if category:
+            cursor.execute("""
+                SELECT * FROM entities 
+                WHERE name ILIKE %s AND category = %s
+                ORDER BY name 
+                LIMIT %s
+            """, (f"%{query}%", category, limit))
+        else:
+            cursor.execute("""
+                SELECT * FROM entities 
+                WHERE name ILIKE %s
+                ORDER BY name 
+                LIMIT %s
+            """, (f"%{query}%", limit))
+        
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return results
+    except Exception as e:
+        logger.error(f"Error searching entities: {e}")
+        return []
+
+def get_entity_domains():
+    """Get all unique domains/categories."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cursor.execute("""
+            SELECT DISTINCT category as domain 
+            FROM entities 
+            WHERE category IS NOT NULL
+            ORDER BY category
+        """)
+        
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return [row['domain'] for row in results]
+    except Exception as e:
+        logger.error(f"Error getting domains: {e}")
+        return []
+
+def create_relationship(source_id, target_id, relationship_type, metadata=None):
+    """Stub function - relationships not implemented yet."""
+    return False, "Relationships feature not implemented"
+
+def get_entity_relationships(entity_id):
+    """Stub function - relationships not implemented yet."""
+    return []
+
+def find_related_entities(entity_id, relationship_types=None, limit=10):
+    """Stub function - relationships not implemented yet."""
+    return []
+
 def get_entity_by_name(name):
     """
     Get entity details by name.
