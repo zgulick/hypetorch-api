@@ -17,7 +17,7 @@ from database import (
     get_entities_by_category,
     get_metric_history,
     get_latest_hype_scores,
-    search_entities
+    search_entities_by_category
 )
 
 from api_utils import StandardResponse
@@ -72,7 +72,7 @@ def search_entities_v2(
         logger.info(f"Search params: q={q}, category={category}, limit={limit}")
         
         # Try with explicit keyword arguments
-        results = search_entities(query=q, category=category, limit=limit)
+        results = search_entities_by_category(query=q, category=category, limit=limit)
         
         logger.info(f"Search returned {len(results)} results")
         

@@ -279,7 +279,7 @@ def delete_entity(entity_id):
             conn.rollback()
         return False, str(e)
 
-def search_entities(query, category=None, limit=20):
+def search_entities_by_category(query, category=None, limit=20):
     """Search for entities by name."""
     try:
         conn = get_connection()
