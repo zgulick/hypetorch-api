@@ -20,20 +20,6 @@ from database import (
 from api_utils import StandardResponse
 from models_v2 import BulkEntitiesRequest, EntityData, EntityMetrics
 from pydantic import BaseModel, Field
-from database import (
-    initialize_database,
-    create_entity,
-    get_entity_by_name,
-    get_entity_by_id,
-    update_entity,
-    delete_entity,
-    create_relationship,
-    get_entity_relationships,
-    find_related_entities,
-    get_entity_domains,
-    search_entities,
-    save_metric
-)
 
 logger = logging.getLogger('api_v2')
 
