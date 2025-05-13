@@ -331,6 +331,23 @@ def get_entity_domains():
         logger.error(f"Error getting domains: {e}")
         return []
 
+def get_entity_by_id(entity_id):
+    """Get entity by database ID."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cursor.execute("SELECT * FROM entities WHERE id = %s", (entity_id,))
+        result = cursor.fetchone()
+        
+        cursor.close() 
+        conn.close()
+        
+        return dict(result) if result else None
+    except Exception as e:
+        logger.error(f"Error getting entity by ID: {e}")
+        return None
+
 def create_relationship(source_id, target_id, relationship_type, metadata=None):
     """Stub function - relationships not implemented yet."""
     return False, "Relationships feature not implemented"

@@ -8,6 +8,7 @@ from auth_middleware import get_api_key
 from database import (
     get_entities,
     get_entity_by_name,
+    get_entity_by_id,
     get_current_metrics,
     get_historical_metrics,
     get_entity_current_metrics, 
@@ -17,6 +18,7 @@ from database import (
     get_metric_history,
     get_latest_hype_scores
 )
+
 from api_utils import StandardResponse
 from models_v2 import BulkEntitiesRequest, EntityData, EntityMetrics
 from pydantic import BaseModel, Field
@@ -291,7 +293,73 @@ def bulk_entities_v2(
             status_code=500,
             details=str(e)
         )
+
+@v2_router.get("/entities/{entity_id}")
+def get_entity_details_v2(
+    entity_id: str,
+    include_metrics: bool = True,
+    include_history: bool = False,
+    metrics: Optional[str] = Query(None, description="Comma-separated list of metrics"),
+    history_limit: int = Query(30, ge=1, le=100),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get detailed information about a specific entity (V2).
+    """
+    start_time = time.time()
+    
+    try:
+        # Try to get entity by name
+        entity = get_entity_by_name(entity_id.replace("_", " "))
         
+        # If not found and it's a digit, try by ID
+        if not entity and entity_id.isdigit():
+            entity = get_entity_by_id(int(entity_id))
+        
+        if not entity:
+            return StandardResponse.error(
+                message=f"Entity '{entity_id}' not found",
+                status_code=404
+            )
+        
+        # Build response
+        response_data = {
+            "id": entity['id'],
+            "name": entity['name'],
+            "type": entity.get('type'),
+            "category": entity.get('category'),
+            "subcategory": entity.get('subcategory'),
+            "metadata": entity.get('metadata', {})
+        }
+        
+        # Add metrics if requested
+        if include_metrics:
+            requested_metrics = None
+            if metrics:
+                requested_metrics = [m.strip() for m in metrics.split(",")]
+            
+            entity_metrics = get_entity_current_metrics(entity['id'], requested_metrics)
+            response_data['metrics'] = entity_metrics
+        
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=response_data,
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "include_metrics": include_metrics,
+                "include_history": include_history
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving entity details: {e}")
+        return StandardResponse.error(
+            message="Failed to retrieve entity details",
+            status_code=500,
+            details=str(e)
+        )
+
 @v2_router.post("/metrics/compare")
 def compare_entities(
     request: BulkEntitiesRequest,
