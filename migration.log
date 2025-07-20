@@ -1,0 +1,50 @@
+2025-05-11 16:16:05,007 - INFO: ✅ PostgreSQL driver found
+2025-05-11 16:16:05,009 - ERROR: ❌ DATABASE_URL not found in environment variables
+2025-05-11 16:16:50,556 - INFO: ✅ PostgreSQL driver found
+2025-05-11 16:16:50,557 - INFO: ✅ Found DATABASE_URL: postgresql.../hypetorch
+2025-05-11 16:16:50,557 - INFO: ✅ Using database environment: development
+2025-05-11 16:16:55,238 - INFO: 🚀 Starting database migration
+2025-05-11 16:16:55,238 - INFO: Step 1: Gathering current data
+2025-05-11 16:16:57,203 - INFO: ✅ Found 45 entities in current database
+2025-05-11 16:16:59,557 - INFO: ✅ Found 777 component metrics
+2025-05-11 16:16:59,557 - INFO: ✅ Found 814 hype scores
+2025-05-11 16:16:59,557 - INFO: Step 2: Setting up new schema tables
+2025-05-11 16:17:01,696 - INFO: ✅ Created new tables successfully
+2025-05-11 16:17:01,696 - INFO: Step 3: Migrating entities to new table
+2025-05-11 16:17:09,416 - INFO: ✅ Migrated 45 entities
+2025-05-11 16:17:09,416 - INFO: Step 4: Migrating metrics to new tables
+2025-05-11 16:21:36,658 - INFO: ✅ Migrated 777 component metrics
+2025-05-11 16:21:36,658 - INFO: ✅ Migrated 814 hype scores
+2025-05-11 16:21:36,658 - INFO: Step 5: Validating migration
+2025-05-11 16:21:37,385 - INFO: Validation Results:
+2025-05-11 16:21:37,385 - INFO:   Original entities: 45, New entities: 45
+2025-05-11 16:21:37,385 - INFO:   Original component metrics: 777, New metrics: 777
+2025-05-11 16:21:37,385 - INFO:   Original hype scores: 814, New hype scores: 814
+2025-05-11 16:21:37,386 - INFO: Step 6: Finalizing migration
+2025-05-11 16:21:37,734 - ERROR: ❌ Migration error: relation "entity_relationships" already exists
+
+2025-05-11 16:29:53,232 - INFO: ✅ PostgreSQL driver found
+2025-05-11 16:29:53,232 - INFO: ✅ Found DATABASE_URL: postgresql.../hypetorch
+2025-05-11 16:29:53,233 - INFO: ✅ Using database environment: development
+2025-05-11 16:29:55,908 - INFO: 🚀 Starting database migration
+2025-05-11 16:29:55,909 - INFO: Step 1: Gathering current data
+2025-05-11 16:29:57,909 - INFO: ✅ Found 45 entities in current database
+2025-05-11 16:30:00,257 - INFO: ✅ Found 777 component metrics
+2025-05-11 16:30:00,257 - INFO: ✅ Found 814 hype scores
+2025-05-11 16:30:00,258 - INFO: Step 2: Setting up new schema tables
+2025-05-11 16:30:02,337 - INFO: ✅ Created new tables successfully
+2025-05-11 16:30:02,337 - INFO: Step 3: Migrating entities to new table
+2025-05-11 16:30:10,011 - INFO: ✅ Migrated 45 entities
+2025-05-11 16:30:10,014 - INFO: Step 4: Migrating metrics to new tables
+2025-05-11 16:34:32,437 - INFO: ✅ Migrated 777 component metrics
+2025-05-11 16:34:32,438 - INFO: ✅ Migrated 814 hype scores
+2025-05-11 16:34:32,438 - INFO: Step 5: Validating migration
+2025-05-11 16:34:33,145 - INFO: Validation Results:
+2025-05-11 16:34:33,145 - INFO:   Original entities: 45, New entities: 45
+2025-05-11 16:34:33,146 - INFO:   Original component metrics: 777, New metrics: 1554
+2025-05-11 16:34:33,146 - INFO:   Original hype scores: 814, New hype scores: 1628
+2025-05-11 16:34:33,146 - INFO: Step 6: Finalizing migration
+2025-05-11 16:34:33,651 - INFO: ✅ Successfully renamed tables to finalize migration
+2025-05-11 16:34:33,651 - INFO: Step 7: Creating indexes
+2025-05-11 16:34:34,155 - INFO: ✅ Successfully created indexes
+2025-05-11 16:34:34,157 - INFO: ✅ Migration completed successfully in 278.25 seconds

@@ -501,7 +501,7 @@ def get_latest_hype_scores(limit=None, category=None, subcategory=None):
     try:
         # Base query
         query = """
-            SELECT e.name, h.score, h.timestamp
+            SELECT DISTINCT e.name, h.score, h.timestamp
             FROM entities e
             JOIN (
                 SELECT entity_id, MAX(timestamp) as max_timestamp
