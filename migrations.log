@@ -1,2 +1,22 @@
 2025-03-24 21:27:56,648 - INFO: Migrations table already exists
 2025-03-24 21:27:56,649 - INFO: Migrations table already exists
+2025-07-20 22:12:45,994 - INFO: Migrations table already exists
+2025-07-20 22:12:45,995 - INFO: Migrations table already exists
+2025-07-20 22:12:46,917 - INFO: Found 6 previously applied migrations
+2025-07-20 22:12:46,917 - INFO: Found 6 previously applied migrations
+2025-07-20 22:12:46,917 - INFO: Database type: PostgreSQL
+2025-07-20 22:12:46,917 - INFO: Database type: PostgreSQL
+2025-07-20 22:12:46,917 - INFO: Migration 1.0.0 already applied, skipping
+2025-07-20 22:12:46,918 - INFO: Migration 1.0.0 already applied, skipping
+2025-07-20 22:12:46,918 - INFO: Migration 1.0.1 already applied, skipping
+2025-07-20 22:12:46,918 - INFO: Migration 1.0.1 already applied, skipping
+2025-07-20 22:12:46,919 - INFO: Migration 1.0.2 already applied, skipping
+2025-07-20 22:12:46,919 - INFO: Migration 1.0.2 already applied, skipping
+2025-07-20 22:12:46,920 - INFO: Migration 1.0.3 already applied, skipping
+2025-07-20 22:12:46,921 - INFO: Migration 1.0.3 already applied, skipping
+2025-07-20 22:12:46,921 - INFO: Migration 1.0.4 already applied, skipping
+2025-07-20 22:12:46,921 - INFO: Migration 1.0.4 already applied, skipping
+2025-07-20 22:12:46,921 - INFO: Migration 1.0.5 already applied, skipping
+2025-07-20 22:12:46,921 - INFO: Migration 1.0.5 already applied, skipping
+2025-07-20 22:12:46,921 - INFO: All migrations completed successfully
+2025-07-20 22:12:46,921 - INFO: All migrations completed successfully
