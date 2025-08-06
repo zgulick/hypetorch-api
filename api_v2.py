@@ -17,7 +17,9 @@ from database import (
     get_entities_by_category,
     get_metric_history,
     get_latest_hype_scores,
-    search_entities_by_category
+    search_entities_by_category,
+    get_trending_entities,
+    execute_query
 )
 
 from api_utils import StandardResponse
@@ -474,4 +476,379 @@ def compare_entities(
             message="Failed to compare entities",
             status_code=500,
             details=str(e)
-        )    
+        )
+
+# New endpoints for website rebuild
+
+@v2_router.get("/trending")
+def get_trending_entities_v2(
+    metric: str = Query("hype_score", description="Metric to analyze for trending"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum results to return"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    subcategory: Optional[str] = Query(None, description="Filter by subcategory"),
+    time_period: Optional[str] = Query(None, description="Filter by time period"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get trending entities based on recent metric changes.
+    Returns entities with biggest percentage changes.
+    """
+    start_time = time.time()
+    
+    try:
+        trending_data = get_trending_entities(
+            metric_type=metric,
+            limit=limit,
+            time_period=time_period,
+            category=category,
+            subcategory=subcategory
+        )
+        
+        # Format the response
+        formatted_data = []
+        for row in trending_data:
+            formatted_data.append({
+                "name": row["entity_name"],
+                "current_value": round(float(row["current_value"]), 2),
+                "previous_value": round(float(row["previous_value"]), 2),
+                "percent_change": round(float(row["percent_change"]), 1),
+                "trend_direction": "up" if row["percent_change"] > 0 else "down",
+                "current_timestamp": row["current_timestamp"].isoformat() if row["current_timestamp"] else None,
+                "previous_timestamp": row["previous_timestamp"].isoformat() if row["previous_timestamp"] else None
+            })
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=formatted_data,
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "metric": metric,
+                "count": len(formatted_data),
+                "filters": {
+                    "category": category,
+                    "subcategory": subcategory,
+                    "time_period": time_period
+                }
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting trending entities: {e}")
+        return StandardResponse.error(
+            message="Failed to retrieve trending entities",
+            status_code=500,
+            details=str(e)
+        )
+
+@v2_router.get("/metrics/recent")
+def get_recent_metrics_v2(
+    period: str = Query("current", description="Time period (current, week_2025_07_27, last_7_days)"),
+    entities: Optional[str] = Query(None, description="Comma-separated entity names to filter"),
+    metrics: Optional[str] = Query(None, description="Comma-separated metrics to include"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum entities to return"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get recent metrics data for dashboard widgets and charts.
+    """
+    start_time = time.time()
+    
+    try:
+        # Parse entity filter
+        entity_filter = []
+        if entities:
+            entity_filter = [name.strip() for name in entities.split(",")]
+        
+        # Parse metrics filter
+        metrics_filter = None
+        if metrics:
+            metrics_filter = [metric.strip() for metric in metrics.split(",")]
+        else:
+            # Default metrics for dashboard
+            metrics_filter = ["hype_score", "rodmn_score", "mentions", "talk_time", "wikipedia_views", "reddit_mentions", "google_trends", "google_news_mentions"]
+        
+        # Build query based on period
+        if period == "current":
+            # Get current metrics
+            query = """
+                SELECT 
+                    e.name as entity_name,
+                    cm.metric_type,
+                    cm.value,
+                    cm.timestamp,
+                    cm.time_period
+                FROM entities e
+                JOIN current_metrics cm ON e.id = cm.entity_id
+                WHERE 1=1
+            """
+            params = []
+            
+            if entity_filter:
+                placeholders = ",".join(["%s"] * len(entity_filter))
+                query += f" AND e.name IN ({placeholders})"
+                params.extend(entity_filter)
+            
+            if metrics_filter:
+                placeholders = ",".join(["%s"] * len(metrics_filter))
+                query += f" AND cm.metric_type IN ({placeholders})"
+                params.extend(metrics_filter)
+                
+            query += " ORDER BY e.name, cm.metric_type"
+            
+        else:
+            # Get historical metrics for specific period
+            query = """
+                SELECT 
+                    e.name as entity_name,
+                    hm.metric_type,
+                    hm.value,
+                    hm.timestamp,
+                    hm.time_period
+                FROM entities e
+                JOIN historical_metrics hm ON e.id = hm.entity_id
+                WHERE 1=1
+            """
+            params = []
+            
+            if period.startswith("week_"):
+                query += " AND hm.time_period = %s"
+                params.append(period)
+            
+            if entity_filter:
+                placeholders = ",".join(["%s"] * len(entity_filter))
+                query += f" AND e.name IN ({placeholders})"
+                params.extend(entity_filter)
+            
+            if metrics_filter:
+                placeholders = ",".join(["%s"] * len(metrics_filter))
+                query += f" AND hm.metric_type IN ({placeholders})"
+                params.extend(metrics_filter)
+                
+            query += " ORDER BY e.name, hm.metric_type"
+        
+        # Execute query
+        raw_data = execute_query(query, params)
+        
+        # Format response by entity
+        entities_data = {}
+        for row in raw_data:
+            entity_name = row["entity_name"]
+            if entity_name not in entities_data:
+                entities_data[entity_name] = {
+                    "name": entity_name,
+                    "metrics": {},
+                    "time_period": row["time_period"],
+                    "last_updated": None
+                }
+            
+            entities_data[entity_name]["metrics"][row["metric_type"]] = round(float(row["value"]), 2)
+            
+            # Keep track of most recent timestamp
+            if row["timestamp"]:
+                current_timestamp = entities_data[entity_name]["last_updated"]
+                if not current_timestamp or row["timestamp"] > current_timestamp:
+                    entities_data[entity_name]["last_updated"] = row["timestamp"].isoformat()
+        
+        # Convert to list and apply limit
+        result = list(entities_data.values())[:limit]
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=result,
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "period": period,
+                "count": len(result),
+                "metrics_included": metrics_filter,
+                "entity_filter": entity_filter
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting recent metrics: {e}")
+        return StandardResponse.error(
+            message="Failed to retrieve recent metrics",
+            status_code=500,
+            details=str(e)
+        )
+
+@v2_router.get("/dashboard/widgets")
+def get_dashboard_widgets_v2(
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get data for all dashboard widgets in one request.
+    Includes top movers, narrative alerts, and story opportunities.
+    """
+    start_time = time.time()
+    
+    try:
+        # Get top movers (trending HYPE scores)
+        top_movers = get_trending_entities(
+            metric_type="hype_score",
+            limit=5,
+            category="Sports"
+        )
+        
+        # Get narrative alerts (high RODMN scores)
+        narrative_query = """
+            SELECT 
+                e.name as entity_name,
+                cm.value as rodmn_score,
+                cm.timestamp,
+                cm.time_period
+            FROM entities e
+            JOIN current_metrics cm ON e.id = cm.entity_id
+            WHERE cm.metric_type = 'rodmn_score'
+                AND cm.value > 50
+                AND e.category = 'Sports'
+            ORDER BY cm.value DESC
+            LIMIT 5
+        """
+        narrative_alerts = execute_query(narrative_query)
+        
+        # Get story opportunities (entities with interesting patterns)
+        # This is a simplified version - can be enhanced based on your algorithms
+        story_query = """
+            SELECT 
+                e.name as entity_name,
+                MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) as hype,
+                MAX(CASE WHEN cm.metric_type = 'mentions' THEN cm.value END) as mentions,
+                MAX(CASE WHEN cm.metric_type = 'talk_time' THEN cm.value END) as talk_time,
+                MAX(cm.timestamp) as last_updated
+            FROM entities e
+            JOIN current_metrics cm ON e.id = cm.entity_id
+            WHERE e.category = 'Sports'
+                AND cm.metric_type IN ('hype_score', 'mentions', 'talk_time')
+            GROUP BY e.name
+            HAVING MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) > 30
+                OR MAX(CASE WHEN cm.metric_type = 'mentions' THEN cm.value END) > 10
+            ORDER BY MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) DESC
+            LIMIT 5
+        """
+        story_opportunities = execute_query(story_query)
+        
+        # Format the response
+        widgets = {
+            "top_movers": [
+                {
+                    "name": row["entity_name"],
+                    "current_score": round(float(row["current_value"]), 1),
+                    "change": round(float(row["percent_change"]), 1),
+                    "trend": "up" if row["percent_change"] > 0 else "down"
+                }
+                for row in top_movers
+            ],
+            "narrative_alerts": [
+                {
+                    "name": row["entity_name"],
+                    "rodmn_score": round(float(row["rodmn_score"]), 1),
+                    "alert_level": "high" if row["rodmn_score"] > 75 else "medium",
+                    "context": f"Controversy score of {round(float(row['rodmn_score']), 1)}"
+                }
+                for row in narrative_alerts
+            ],
+            "story_opportunities": [
+                {
+                    "name": row["entity_name"],
+                    "hype_score": round(float(row["hype"]), 1) if row["hype"] else 0,
+                    "mentions": int(row["mentions"]) if row["mentions"] else 0,
+                    "talk_time": round(float(row["talk_time"]), 1) if row["talk_time"] else 0,
+                    "angle": "Rising engagement" if row["hype"] and row["hype"] > 50 else "Emerging storyline"
+                }
+                for row in story_opportunities
+            ]
+        }
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=widgets,
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "widget_count": 3,
+                "data_updated": datetime.now().isoformat()
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting dashboard widgets: {e}")
+        return StandardResponse.error(
+            message="Failed to retrieve dashboard widgets",
+            status_code=500,
+            details=str(e)
+        )
+
+@v2_router.get("/time-periods")
+def get_available_time_periods_v2(
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get available time periods for historical data.
+    """
+    start_time = time.time()
+    
+    try:
+        query = """
+            SELECT DISTINCT 
+                time_period,
+                COUNT(DISTINCT entity_id) as entity_count,
+                COUNT(*) as metric_count,
+                MIN(timestamp) as earliest_data,
+                MAX(timestamp) as latest_data
+            FROM historical_metrics 
+            WHERE time_period IS NOT NULL
+                AND time_period LIKE 'week_%'
+            GROUP BY time_period
+            ORDER BY time_period DESC
+        """
+        
+        periods_data = execute_query(query)
+        
+        # Format periods with labels
+        formatted_periods = []
+        for row in periods_data:
+            # Parse week format: week_2025_07_27
+            time_period = row["time_period"]
+            if time_period.startswith("week_"):
+                parts = time_period.split("_")
+                if len(parts) >= 4:
+                    year = parts[1]
+                    month = parts[2]
+                    day = parts[3]
+                    
+                    # Format for display
+                    month_names = {
+                        "01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
+                        "05": "May", "06": "Jun", "07": "Jul", "08": "Aug",
+                        "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"
+                    }
+                    
+                    display_label = f"Week of {month_names.get(month, month)} {day}, {year}"
+                    
+                    formatted_periods.append({
+                        "time_period": time_period,
+                        "display_label": display_label,
+                        "entity_count": row["entity_count"],
+                        "metric_count": row["metric_count"],
+                        "date_range": {
+                            "start": row["earliest_data"].isoformat() if row["earliest_data"] else None,
+                            "end": row["latest_data"].isoformat() if row["latest_data"] else None
+                        }
+                    })
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=formatted_periods,
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "period_count": len(formatted_periods)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting time periods: {e}")
+        return StandardResponse.error(
+            message="Failed to retrieve time periods",
+            status_code=500,
+            details=str(e)
+        )

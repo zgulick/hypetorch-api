@@ -14,3 +14,5 @@ LINE 4:         FROM current_metrics cm
 2025-08-02 11:43:57,095 - database - INFO - Database initialized successfully
 2025-08-05 08:40:24,224 - database - INFO - Initializing database...
 2025-08-05 08:40:26,420 - database - INFO - Database initialized successfully
+2025-08-05 20:14:23,854 - database - ERROR - Database error: tuple index out of range
+2025-08-05 20:14:32,981 - database - ERROR - Database error: tuple index out of range
