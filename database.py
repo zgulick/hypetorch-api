@@ -100,6 +100,10 @@ def execute_query(query, params=None, fetch=True):
     try:
         conn = get_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Set search path for schema
+            if DB_ENVIRONMENT:
+                cursor.execute(f"SET search_path TO {DB_ENVIRONMENT};")
+            
             cursor.execute(query, params or ())
             if fetch:
                 result = cursor.fetchall()
@@ -127,6 +131,10 @@ def execute_transaction(queries):
     try:
         conn = get_connection()
         with conn.cursor() as cursor:
+            # Set search path for schema
+            if DB_ENVIRONMENT:
+                cursor.execute(f"SET search_path TO {DB_ENVIRONMENT};")
+            
             for query, params in queries:
                 cursor.execute(query, params or ())
             conn.commit()

@@ -683,12 +683,63 @@ def get_dashboard_widgets_v2(
     start_time = time.time()
     
     try:
-        # Get top movers (trending HYPE scores)
-        top_movers = get_trending_entities(
-            metric_type="hype_score",
-            limit=5,
-            category="Sports"
-        )
+        # Get top movers with actual percentage change calculation
+        top_movers_query = """
+            WITH current_scores AS (
+                SELECT 
+                    e.id,
+                    e.name as entity_name,
+                    cm.value as current_value,
+                    cm.time_period as current_period
+                FROM entities e
+                JOIN current_metrics cm ON e.id = cm.entity_id
+                WHERE cm.metric_type = 'hype_score'
+                    AND e.category = 'Sports'
+                    AND cm.value IS NOT NULL
+            ),
+            previous_scores AS (
+                SELECT 
+                    e.id,
+                    e.name as entity_name,
+                    hm.value as previous_value,
+                    hm.time_period,
+                    ROW_NUMBER() OVER (PARTITION BY e.id ORDER BY hm.timestamp DESC) as rn
+                FROM entities e
+                JOIN historical_metrics hm ON e.id = hm.entity_id
+                WHERE hm.metric_type = 'hype_score'
+                    AND e.category = 'Sports'
+                    AND hm.value IS NOT NULL
+            )
+            SELECT 
+                c.entity_name,
+                c.current_value,
+                COALESCE(p.previous_value, 0) as previous_value,
+                CASE 
+                    WHEN COALESCE(p.previous_value, 0) > 0 
+                    THEN ((c.current_value - p.previous_value) / p.previous_value) * 100
+                    ELSE 0
+                END as percent_change
+            FROM current_scores c
+            LEFT JOIN previous_scores p ON c.id = p.id AND p.rn = 1
+            WHERE c.current_value > 0
+            ORDER BY ABS(CASE 
+                WHEN COALESCE(p.previous_value, 0) > 0 
+                THEN ((c.current_value - p.previous_value) / p.previous_value) * 100
+                ELSE 0
+            END) DESC
+            LIMIT 5
+        """
+        top_movers_raw = execute_query(top_movers_query)
+        
+        top_movers = []
+        for row in top_movers_raw:
+            percent_change = float(row["percent_change"]) if row["percent_change"] else 0
+            top_movers.append({
+                "name": row["entity_name"],
+                "current_score": round(float(row["current_value"]), 1),
+                "change": round(percent_change, 1),
+                "trend": "up" if percent_change > 0 else "down"
+            })
         
         # Get narrative alerts (high RODMN scores)
         narrative_query = """
@@ -700,15 +751,23 @@ def get_dashboard_widgets_v2(
             FROM entities e
             JOIN current_metrics cm ON e.id = cm.entity_id
             WHERE cm.metric_type = 'rodmn_score'
-                AND cm.value > 50
+                AND cm.value > 20
                 AND e.category = 'Sports'
             ORDER BY cm.value DESC
             LIMIT 5
         """
-        narrative_alerts = execute_query(narrative_query)
+        narrative_alerts_raw = execute_query(narrative_query)
+        
+        narrative_alerts = []
+        for row in narrative_alerts_raw:
+            narrative_alerts.append({
+                "name": row["entity_name"],
+                "rodmn_score": round(float(row["rodmn_score"]), 1),
+                "alert_level": "high" if row["rodmn_score"] > 60 else "medium" if row["rodmn_score"] > 40 else "low",
+                "context": f"Controversy discussions detected - RODMN score {round(float(row['rodmn_score']), 1)}"
+            })
         
         # Get story opportunities (entities with interesting patterns)
-        # This is a simplified version - can be enhanced based on your algorithms
         story_query = """
             SELECT 
                 e.name as entity_name,
@@ -720,44 +779,43 @@ def get_dashboard_widgets_v2(
             JOIN current_metrics cm ON e.id = cm.entity_id
             WHERE e.category = 'Sports'
                 AND cm.metric_type IN ('hype_score', 'mentions', 'talk_time')
-            GROUP BY e.name
-            HAVING MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) > 30
-                OR MAX(CASE WHEN cm.metric_type = 'mentions' THEN cm.value END) > 10
+            GROUP BY e.name, e.id
+            HAVING MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) > 20
+                OR MAX(CASE WHEN cm.metric_type = 'mentions' THEN cm.value END) > 5
             ORDER BY MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) DESC
             LIMIT 5
         """
-        story_opportunities = execute_query(story_query)
+        story_opportunities_raw = execute_query(story_query)
+        
+        story_opportunities = []
+        for row in story_opportunities_raw:
+            hype_val = float(row["hype"]) if row["hype"] else 0
+            mentions_val = int(row["mentions"]) if row["mentions"] else 0  
+            talk_time_val = float(row["talk_time"]) if row["talk_time"] else 0
+            
+            # Generate relevant angle based on metrics
+            if hype_val > 60:
+                angle = "High engagement - prime for feature coverage"
+            elif mentions_val > 50:
+                angle = "Frequently mentioned - trending storyline"
+            elif talk_time_val > 10:
+                angle = "Extended discussion time - in-depth story potential"
+            else:
+                angle = "Emerging storyline with growth potential"
+                
+            story_opportunities.append({
+                "name": row["entity_name"],
+                "hype_score": round(hype_val, 1),
+                "mentions": mentions_val,
+                "talk_time": round(talk_time_val, 1),
+                "angle": angle
+            })
         
         # Format the response
         widgets = {
-            "top_movers": [
-                {
-                    "name": row["entity_name"],
-                    "current_score": round(float(row["current_value"]), 1),
-                    "change": round(float(row["percent_change"]), 1),
-                    "trend": "up" if row["percent_change"] > 0 else "down"
-                }
-                for row in top_movers
-            ],
-            "narrative_alerts": [
-                {
-                    "name": row["entity_name"],
-                    "rodmn_score": round(float(row["rodmn_score"]), 1),
-                    "alert_level": "high" if row["rodmn_score"] > 75 else "medium",
-                    "context": f"Controversy score of {round(float(row['rodmn_score']), 1)}"
-                }
-                for row in narrative_alerts
-            ],
-            "story_opportunities": [
-                {
-                    "name": row["entity_name"],
-                    "hype_score": round(float(row["hype"]), 1) if row["hype"] else 0,
-                    "mentions": int(row["mentions"]) if row["mentions"] else 0,
-                    "talk_time": round(float(row["talk_time"]), 1) if row["talk_time"] else 0,
-                    "angle": "Rising engagement" if row["hype"] and row["hype"] > 50 else "Emerging storyline"
-                }
-                for row in story_opportunities
-            ]
+            "top_movers": top_movers,
+            "narrative_alerts": narrative_alerts,
+            "story_opportunities": story_opportunities
         }
         
         processing_time = (time.time() - start_time) * 1000
