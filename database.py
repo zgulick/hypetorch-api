@@ -99,20 +99,40 @@ def execute_query(query, params=None, fetch=True):
     conn = None
     try:
         conn = get_connection()
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        with conn.cursor() as cursor:
             # Set search path for schema
             if DB_ENVIRONMENT:
                 cursor.execute(f"SET search_path TO {DB_ENVIRONMENT};")
             
+            # Log query details for debugging
+            logger.info(f"Executing query with params: {params}")
+            
+            # Handle params safely - ensure it's a tuple or list if provided
+            if params is not None:
+                if not isinstance(params, (tuple, list)):
+                    params = (params,)
+            
             cursor.execute(query, params or ())
             if fetch:
-                result = cursor.fetchall()
+                rows = cursor.fetchall()
+                logger.info(f"Query returned {len(rows)} rows")
+                
+                # Convert to list of dicts manually
+                result = []
+                if rows and cursor.description:
+                    columns = [desc[0] for desc in cursor.description]
+                    for row in rows:
+                        result.append(dict(zip(columns, row)))
             else:
                 result = None
                 conn.commit()
             return result
     except Exception as e:
         logger.error(f"Database error: {e}")
+        logger.error(f"Query: {query}")
+        logger.error(f"Params: {params}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         if conn:
             conn.rollback()
         raise e

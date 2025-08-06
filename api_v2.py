@@ -730,7 +730,12 @@ def get_dashboard_widgets_v2(
             END) DESC
             LIMIT 5
         """
-        top_movers_raw = execute_query(top_movers_query)
+        try:
+            top_movers_raw = execute_query(top_movers_query)
+            logger.info(f"Top movers query returned {len(top_movers_raw) if top_movers_raw else 0} rows")
+        except Exception as e:
+            logger.error(f"Top movers execute_query failed: {e}")
+            raise
         
         # Check if we got results
         if not top_movers_raw:
@@ -789,7 +794,12 @@ def get_dashboard_widgets_v2(
             ORDER BY hm.value DESC
             LIMIT 5
         """
-        narrative_alerts_raw = execute_query(narrative_query)
+        try:
+            narrative_alerts_raw = execute_query(narrative_query)
+            logger.info(f"Narrative alerts query returned {len(narrative_alerts_raw) if narrative_alerts_raw else 0} rows")
+        except Exception as e:
+            logger.error(f"Narrative alerts execute_query failed: {e}")
+            raise
         
         # Check if we got results
         if not narrative_alerts_raw:
@@ -847,7 +857,12 @@ def get_dashboard_widgets_v2(
             ORDER BY MAX(CASE WHEN hm.metric_type = 'hype_score' THEN hm.value END) DESC
             LIMIT 5
         """
-        story_opportunities_raw = execute_query(story_query)
+        try:
+            story_opportunities_raw = execute_query(story_query)
+            logger.info(f"Story opportunities query returned {len(story_opportunities_raw) if story_opportunities_raw else 0} rows")
+        except Exception as e:
+            logger.error(f"Story opportunities execute_query failed: {e}")
+            raise
         
         # Check if we got results
         if not story_opportunities_raw:
@@ -947,8 +962,12 @@ def get_available_time_periods_v2(
             ORDER BY time_period DESC
         """
         logger.info(f"Executing time periods query: {query}")
-        periods_data = execute_query(query)
-        logger.info(f"Time periods query returned {len(periods_data) if periods_data else 0} rows")
+        try:
+            periods_data = execute_query(query)
+            logger.info(f"Time periods query returned {len(periods_data) if periods_data else 0} rows")
+        except Exception as e:
+            logger.error(f"Time periods execute_query failed: {e}")
+            raise
         
         # Check if we got results
         if not periods_data:
