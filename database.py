@@ -107,12 +107,13 @@ def execute_query(query, params=None, fetch=True):
             # Log query details for debugging
             logger.info(f"Executing query with params: {params}")
             
-            # Handle params safely - ensure it's a tuple or list if provided
-            if params is not None:
+            # Handle params safely
+            if params is None:
+                cursor.execute(query)
+            else:
                 if not isinstance(params, (tuple, list)):
                     params = (params,)
-            
-            cursor.execute(query, params or ())
+                cursor.execute(query, params)
             if fetch:
                 rows = cursor.fetchall()
                 logger.info(f"Query returned {len(rows)} rows")
