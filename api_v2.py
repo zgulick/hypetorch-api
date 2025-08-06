@@ -738,13 +738,33 @@ def get_dashboard_widgets_v2(
         
         top_movers = []
         for row in top_movers_raw:
-            percent_change = float(row["percent_change"]) if row["percent_change"] else 0
-            top_movers.append({
-                "name": row["entity_name"],
-                "current_score": round(float(row["current_value"]), 1),
-                "change": round(percent_change, 1),
-                "trend": "up" if percent_change > 0 else "down"
-            })
+            try:
+                # Defensive parsing - handle both dict and tuple formats
+                if isinstance(row, dict):
+                    entity_name = row.get("entity_name")
+                    current_value = row.get("current_value")
+                    percent_change = row.get("percent_change")
+                else:
+                    # Handle tuple format
+                    entity_name = row[0] if len(row) > 0 else None
+                    current_value = row[1] if len(row) > 1 else None
+                    percent_change = row[3] if len(row) > 3 else None
+                
+                if not entity_name or current_value is None:
+                    continue
+                    
+                percent_change_val = float(percent_change) if percent_change is not None else 0
+                current_value_val = float(current_value) if current_value is not None else 0
+                
+                top_movers.append({
+                    "name": entity_name,
+                    "current_score": round(current_value_val, 1),
+                    "change": round(percent_change_val, 1),
+                    "trend": "up" if percent_change_val > 0 else "down"
+                })
+            except Exception as e:
+                logger.error(f"Error processing top mover row {row}: {e}")
+                continue
         
         # Get narrative alerts (high RODMN scores) from latest period
         narrative_query = """
@@ -777,12 +797,30 @@ def get_dashboard_widgets_v2(
         
         narrative_alerts = []
         for row in narrative_alerts_raw:
-            narrative_alerts.append({
-                "name": row["entity_name"],
-                "rodmn_score": round(float(row["rodmn_score"]), 1),
-                "alert_level": "high" if row["rodmn_score"] > 60 else "medium" if row["rodmn_score"] > 40 else "low",
-                "context": f"Controversy discussions detected - RODMN score {round(float(row['rodmn_score']), 1)}"
-            })
+            try:
+                # Defensive parsing - handle both dict and tuple formats
+                if isinstance(row, dict):
+                    entity_name = row.get("entity_name")
+                    rodmn_score = row.get("rodmn_score")
+                else:
+                    # Handle tuple format
+                    entity_name = row[0] if len(row) > 0 else None
+                    rodmn_score = row[1] if len(row) > 1 else None
+                
+                if not entity_name or rodmn_score is None:
+                    continue
+                    
+                rodmn_score_val = float(rodmn_score) if rodmn_score is not None else 0
+                
+                narrative_alerts.append({
+                    "name": entity_name,
+                    "rodmn_score": round(rodmn_score_val, 1),
+                    "alert_level": "high" if rodmn_score_val > 60 else "medium" if rodmn_score_val > 40 else "low",
+                    "context": f"Controversy discussions detected - RODMN score {round(rodmn_score_val, 1)}"
+                })
+            except Exception as e:
+                logger.error(f"Error processing narrative alert row {row}: {e}")
+                continue
         
         # Get story opportunities from latest period
         story_query = """
@@ -817,27 +855,47 @@ def get_dashboard_widgets_v2(
         
         story_opportunities = []
         for row in story_opportunities_raw:
-            hype_val = float(row["hype"]) if row["hype"] else 0
-            mentions_val = int(row["mentions"]) if row["mentions"] else 0  
-            talk_time_val = float(row["talk_time"]) if row["talk_time"] else 0
-            
-            # Generate relevant angle based on metrics
-            if hype_val > 60:
-                angle = "High engagement - prime for feature coverage"
-            elif mentions_val > 50:
-                angle = "Frequently mentioned - trending storyline"
-            elif talk_time_val > 10:
-                angle = "Extended discussion time - in-depth story potential"
-            else:
-                angle = "Emerging storyline with growth potential"
+            try:
+                # Defensive parsing - handle both dict and tuple formats
+                if isinstance(row, dict):
+                    entity_name = row.get("entity_name")
+                    hype = row.get("hype")
+                    mentions = row.get("mentions")
+                    talk_time = row.get("talk_time")
+                else:
+                    # Handle tuple format
+                    entity_name = row[0] if len(row) > 0 else None
+                    hype = row[1] if len(row) > 1 else None
+                    mentions = row[2] if len(row) > 2 else None
+                    talk_time = row[3] if len(row) > 3 else None
                 
-            story_opportunities.append({
-                "name": row["entity_name"],
-                "hype_score": round(hype_val, 1),
-                "mentions": mentions_val,
-                "talk_time": round(talk_time_val, 1),
-                "angle": angle
-            })
+                if not entity_name:
+                    continue
+                    
+                hype_val = float(hype) if hype is not None else 0
+                mentions_val = int(mentions) if mentions is not None else 0
+                talk_time_val = float(talk_time) if talk_time is not None else 0
+                
+                # Generate relevant angle based on metrics
+                if hype_val > 60:
+                    angle = "High engagement - prime for feature coverage"
+                elif mentions_val > 50:
+                    angle = "Frequently mentioned - trending storyline"
+                elif talk_time_val > 10:
+                    angle = "Extended discussion time - in-depth story potential"
+                else:
+                    angle = "Emerging storyline with growth potential"
+                    
+                story_opportunities.append({
+                    "name": entity_name,
+                    "hype_score": round(hype_val, 1),
+                    "mentions": mentions_val,
+                    "talk_time": round(talk_time_val, 1),
+                    "angle": angle
+                })
+            except Exception as e:
+                logger.error(f"Error processing story opportunity row {row}: {e}")
+                continue
         
         # Format the response
         widgets = {
@@ -907,34 +965,55 @@ def get_available_time_periods_v2(
         # Format periods with labels
         formatted_periods = []
         for row in periods_data:
-            # Parse week format: week_2025_07_27
-            time_period = row["time_period"]
-            if time_period.startswith("week_"):
-                parts = time_period.split("_")
-                if len(parts) >= 4:
-                    year = parts[1]
-                    month = parts[2]
-                    day = parts[3]
+            try:
+                # Defensive parsing - handle both dict and tuple formats
+                if isinstance(row, dict):
+                    time_period = row.get("time_period")
+                    entity_count = row.get("entity_count", 0)
+                    metric_count = row.get("metric_count", 0)
+                    earliest_data = row.get("earliest_data")
+                    latest_data = row.get("latest_data")
+                else:
+                    # Handle tuple format
+                    time_period = row[0] if len(row) > 0 else None
+                    entity_count = row[1] if len(row) > 1 else 0
+                    metric_count = row[2] if len(row) > 2 else 0
+                    earliest_data = row[4] if len(row) > 4 else None
+                    latest_data = row[5] if len(row) > 5 else None
+                
+                if not time_period:
+                    continue
                     
-                    # Format for display
-                    month_names = {
-                        "01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
-                        "05": "May", "06": "Jun", "07": "Jul", "08": "Aug",
-                        "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"
-                    }
-                    
-                    display_label = f"Week of {month_names.get(month, month)} {day}, {year}"
-                    
-                    formatted_periods.append({
-                        "time_period": time_period,
-                        "display_label": display_label,
-                        "entity_count": row["entity_count"],
-                        "metric_count": row["metric_count"],
-                        "date_range": {
-                            "start": row["earliest_data"].isoformat() if row["earliest_data"] else None,
-                            "end": row["latest_data"].isoformat() if row["latest_data"] else None
+                # Parse week format: week_2025_07_27
+                if time_period.startswith("week_"):
+                    parts = time_period.split("_")
+                    if len(parts) >= 4:
+                        year = parts[1]
+                        month = parts[2]
+                        day = parts[3]
+                        
+                        # Format for display
+                        month_names = {
+                            "01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
+                            "05": "May", "06": "Jun", "07": "Jul", "08": "Aug",
+                            "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"
                         }
-                    })
+                        
+                        display_label = f"Week of {month_names.get(month, month)} {day}, {year}"
+                        
+                        formatted_periods.append({
+                            "time_period": time_period,
+                            "display_label": display_label,
+                            "entity_count": entity_count,
+                            "metric_count": metric_count,
+                            "date_range": {
+                                "start": earliest_data.isoformat() if earliest_data else None,
+                                "end": latest_data.isoformat() if latest_data else None
+                            }
+                        })
+            except Exception as e:
+                logger.error(f"Error processing time period row {row}: {e}")
+                continue
         
         processing_time = (time.time() - start_time) * 1000
         
