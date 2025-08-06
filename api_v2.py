@@ -683,48 +683,51 @@ def get_dashboard_widgets_v2(
     start_time = time.time()
     
     try:
-        # Get top movers with actual percentage change calculation
+        # Use your proven working query pattern for top movers
         top_movers_query = """
-            WITH current_scores AS (
+            WITH last_two_periods AS (
                 SELECT 
-                    e.id,
-                    e.name as entity_name,
-                    cm.value as current_value,
-                    cm.time_period as current_period
-                FROM entities e
-                JOIN current_metrics cm ON e.id = cm.entity_id
-                WHERE cm.metric_type = 'hype_score'
-                    AND e.category = 'Sports'
-                    AND cm.value IS NOT NULL
-            ),
-            previous_scores AS (
-                SELECT 
-                    e.id,
-                    e.name as entity_name,
-                    hm.value as previous_value,
+                    e.name,
                     hm.time_period,
-                    ROW_NUMBER() OVER (PARTITION BY e.id ORDER BY hm.timestamp DESC) as rn
-                FROM entities e
-                JOIN historical_metrics hm ON e.id = hm.entity_id
+                    hm.value
+                FROM historical_metrics hm
+                JOIN entities e ON hm.entity_id = e.id
                 WHERE hm.metric_type = 'hype_score'
-                    AND e.category = 'Sports'
-                    AND hm.value IS NOT NULL
+                  AND hm.time_period LIKE 'week_2025_%'
+                  AND e.category = 'Sports'
+                ORDER BY hm.time_period DESC
+                LIMIT 100
+            ),
+            period_ranks AS (
+                SELECT name, time_period, value,
+                       ROW_NUMBER() OVER (PARTITION BY name ORDER BY time_period DESC) as period_rank
+                FROM last_two_periods
+            ),
+            changes AS (
+                SELECT 
+                    name,
+                    MAX(CASE WHEN period_rank = 1 THEN value END) as current_week,
+                    MAX(CASE WHEN period_rank = 2 THEN value END) as previous_week
+                FROM period_ranks
+                WHERE period_rank <= 2
+                GROUP BY name
             )
             SELECT 
-                c.entity_name,
-                c.current_value,
-                COALESCE(p.previous_value, 0) as previous_value,
+                name as entity_name,
+                current_week as current_value,
+                previous_week as previous_value,
                 CASE 
-                    WHEN COALESCE(p.previous_value, 0) > 0 
-                    THEN ((c.current_value - p.previous_value) / p.previous_value) * 100
+                    WHEN previous_week IS NOT NULL AND previous_week > 0
+                    THEN ((current_week - previous_week) / previous_week) * 100
                     ELSE 0
                 END as percent_change
-            FROM current_scores c
-            LEFT JOIN previous_scores p ON c.id = p.id AND p.rn = 1
-            WHERE c.current_value > 0
+            FROM changes
+            WHERE current_week IS NOT NULL 
+              AND previous_week IS NOT NULL
+              AND previous_week > 0
             ORDER BY ABS(CASE 
-                WHEN COALESCE(p.previous_value, 0) > 0 
-                THEN ((c.current_value - p.previous_value) / p.previous_value) * 100
+                WHEN previous_week > 0
+                THEN ((current_week - previous_week) / previous_week) * 100
                 ELSE 0
             END) DESC
             LIMIT 5
@@ -741,19 +744,20 @@ def get_dashboard_widgets_v2(
                 "trend": "up" if percent_change > 0 else "down"
             })
         
-        # Get narrative alerts (high RODMN scores)
+        # Get narrative alerts (high RODMN scores) using working pattern
         narrative_query = """
             SELECT 
                 e.name as entity_name,
-                cm.value as rodmn_score,
-                cm.timestamp,
-                cm.time_period
-            FROM entities e
-            JOIN current_metrics cm ON e.id = cm.entity_id
-            WHERE cm.metric_type = 'rodmn_score'
-                AND cm.value > 20
+                hm.value as rodmn_score,
+                hm.timestamp,
+                hm.time_period
+            FROM historical_metrics hm
+            JOIN entities e ON hm.entity_id = e.id
+            WHERE hm.metric_type = 'rodmn_score'
+                AND hm.value > 20
+                AND hm.time_period LIKE 'week_2025_%'
                 AND e.category = 'Sports'
-            ORDER BY cm.value DESC
+            ORDER BY hm.time_period DESC, hm.value DESC
             LIMIT 5
         """
         narrative_alerts_raw = execute_query(narrative_query)
@@ -767,22 +771,22 @@ def get_dashboard_widgets_v2(
                 "context": f"Controversy discussions detected - RODMN score {round(float(row['rodmn_score']), 1)}"
             })
         
-        # Get story opportunities (entities with interesting patterns)
+        # Get story opportunities using working pattern from your examples
         story_query = """
             SELECT 
                 e.name as entity_name,
-                MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) as hype,
-                MAX(CASE WHEN cm.metric_type = 'mentions' THEN cm.value END) as mentions,
-                MAX(CASE WHEN cm.metric_type = 'talk_time' THEN cm.value END) as talk_time,
-                MAX(cm.timestamp) as last_updated
-            FROM entities e
-            JOIN current_metrics cm ON e.id = cm.entity_id
+                MAX(CASE WHEN hm.metric_type = 'hype_score' THEN hm.value END) as hype,
+                MAX(CASE WHEN hm.metric_type = 'mentions' THEN hm.value END) as mentions,
+                MAX(CASE WHEN hm.metric_type = 'talk_time' THEN hm.value END) as talk_time,
+                MAX(hm.timestamp) as last_updated
+            FROM historical_metrics hm
+            JOIN entities e ON hm.entity_id = e.id
             WHERE e.category = 'Sports'
-                AND cm.metric_type IN ('hype_score', 'mentions', 'talk_time')
-            GROUP BY e.name, e.id
-            HAVING MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) > 20
-                OR MAX(CASE WHEN cm.metric_type = 'mentions' THEN cm.value END) > 5
-            ORDER BY MAX(CASE WHEN cm.metric_type = 'hype_score' THEN cm.value END) DESC
+                AND hm.metric_type IN ('hype_score', 'mentions', 'talk_time')
+                AND hm.time_period LIKE 'week_2025_%'
+            GROUP BY e.name
+            HAVING MAX(CASE WHEN hm.metric_type = 'hype_score' THEN hm.value END) IS NOT NULL
+            ORDER BY MAX(CASE WHEN hm.metric_type = 'hype_score' THEN hm.value END) DESC
             LIMIT 5
         """
         story_opportunities_raw = execute_query(story_query)
@@ -846,20 +850,20 @@ def get_available_time_periods_v2(
     start_time = time.time()
     
     try:
+        # Use your proven working query pattern
         query = """
-            SELECT DISTINCT 
+            SELECT 
                 time_period,
                 COUNT(DISTINCT entity_id) as entity_count,
-                COUNT(*) as metric_count,
+                COUNT(DISTINCT metric_type) as metric_count,
+                COUNT(*) as total_records,
                 MIN(timestamp) as earliest_data,
                 MAX(timestamp) as latest_data
             FROM historical_metrics 
-            WHERE time_period IS NOT NULL
-                AND time_period LIKE 'week_%'
+            WHERE time_period LIKE 'week_2025_%'
             GROUP BY time_period
             ORDER BY time_period DESC
         """
-        
         periods_data = execute_query(query)
         
         # Format periods with labels
