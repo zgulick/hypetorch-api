@@ -645,9 +645,7 @@ def get_recent_metrics_v2(
             
             # Keep track of most recent timestamp
             if row["timestamp"]:
-                current_timestamp = entities_data[entity_name]["last_updated"]
-                if not current_timestamp or row["timestamp"] > current_timestamp:
-                    entities_data[entity_name]["last_updated"] = row["timestamp"].isoformat()
+                entities_data[entity_name]["last_updated"] = row["timestamp"].isoformat()
         
         # Convert to list and apply limit
         result = list(entities_data.values())[:limit]
@@ -683,56 +681,60 @@ def get_dashboard_widgets_v2(
     start_time = time.time()
     
     try:
-        # Use your proven working query pattern for top movers
+        # Dynamic query - get latest 2 time periods automatically
         top_movers_query = """
-            WITH last_two_periods AS (
+            WITH latest_periods AS (
+                SELECT DISTINCT time_period
+                FROM historical_metrics 
+                WHERE time_period LIKE 'week_2025_%'
+                ORDER BY time_period DESC
+                LIMIT 2
+            ),
+            player_data AS (
                 SELECT 
                     e.name,
                     hm.time_period,
-                    hm.value
+                    hm.value,
+                    ROW_NUMBER() OVER (PARTITION BY e.name ORDER BY hm.time_period DESC) as period_rank
                 FROM historical_metrics hm
                 JOIN entities e ON hm.entity_id = e.id
+                JOIN latest_periods lp ON hm.time_period = lp.time_period
                 WHERE hm.metric_type = 'hype_score'
-                  AND hm.time_period LIKE 'week_2025_%'
                   AND e.category = 'Sports'
-                ORDER BY hm.time_period DESC
-                LIMIT 100
-            ),
-            period_ranks AS (
-                SELECT name, time_period, value,
-                       ROW_NUMBER() OVER (PARTITION BY name ORDER BY time_period DESC) as period_rank
-                FROM last_two_periods
+                  AND hm.value IS NOT NULL
             ),
             changes AS (
                 SELECT 
                     name,
                     MAX(CASE WHEN period_rank = 1 THEN value END) as current_week,
                     MAX(CASE WHEN period_rank = 2 THEN value END) as previous_week
-                FROM period_ranks
+                FROM player_data
                 WHERE period_rank <= 2
                 GROUP BY name
             )
             SELECT 
                 name as entity_name,
                 current_week as current_value,
-                previous_week as previous_value,
+                COALESCE(previous_week, 0) as previous_value,
                 CASE 
                     WHEN previous_week IS NOT NULL AND previous_week > 0
                     THEN ((current_week - previous_week) / previous_week) * 100
                     ELSE 0
                 END as percent_change
             FROM changes
-            WHERE current_week IS NOT NULL 
-              AND previous_week IS NOT NULL
-              AND previous_week > 0
+            WHERE current_week IS NOT NULL
             ORDER BY ABS(CASE 
-                WHEN previous_week > 0
+                WHEN previous_week IS NOT NULL AND previous_week > 0
                 THEN ((current_week - previous_week) / previous_week) * 100
                 ELSE 0
             END) DESC
             LIMIT 5
         """
         top_movers_raw = execute_query(top_movers_query)
+        
+        # Check if we got results
+        if not top_movers_raw:
+            logger.warning("No top movers data found")
         
         top_movers = []
         for row in top_movers_raw:
@@ -744,8 +746,15 @@ def get_dashboard_widgets_v2(
                 "trend": "up" if percent_change > 0 else "down"
             })
         
-        # Get narrative alerts (high RODMN scores) using working pattern
+        # Get narrative alerts (high RODMN scores) from latest period
         narrative_query = """
+            WITH latest_period AS (
+                SELECT time_period
+                FROM historical_metrics 
+                WHERE time_period LIKE 'week_2025_%'
+                ORDER BY time_period DESC
+                LIMIT 1
+            )
             SELECT 
                 e.name as entity_name,
                 hm.value as rodmn_score,
@@ -753,14 +762,18 @@ def get_dashboard_widgets_v2(
                 hm.time_period
             FROM historical_metrics hm
             JOIN entities e ON hm.entity_id = e.id
+            JOIN latest_period lp ON hm.time_period = lp.time_period
             WHERE hm.metric_type = 'rodmn_score'
                 AND hm.value > 20
-                AND hm.time_period LIKE 'week_2025_%'
                 AND e.category = 'Sports'
-            ORDER BY hm.time_period DESC, hm.value DESC
+            ORDER BY hm.value DESC
             LIMIT 5
         """
         narrative_alerts_raw = execute_query(narrative_query)
+        
+        # Check if we got results
+        if not narrative_alerts_raw:
+            logger.warning("No narrative alerts data found")
         
         narrative_alerts = []
         for row in narrative_alerts_raw:
@@ -771,8 +784,15 @@ def get_dashboard_widgets_v2(
                 "context": f"Controversy discussions detected - RODMN score {round(float(row['rodmn_score']), 1)}"
             })
         
-        # Get story opportunities using working pattern from your examples
+        # Get story opportunities from latest period
         story_query = """
+            WITH latest_period AS (
+                SELECT time_period
+                FROM historical_metrics 
+                WHERE time_period LIKE 'week_2025_%'
+                ORDER BY time_period DESC
+                LIMIT 1
+            )
             SELECT 
                 e.name as entity_name,
                 MAX(CASE WHEN hm.metric_type = 'hype_score' THEN hm.value END) as hype,
@@ -781,15 +801,19 @@ def get_dashboard_widgets_v2(
                 MAX(hm.timestamp) as last_updated
             FROM historical_metrics hm
             JOIN entities e ON hm.entity_id = e.id
+            JOIN latest_period lp ON hm.time_period = lp.time_period
             WHERE e.category = 'Sports'
                 AND hm.metric_type IN ('hype_score', 'mentions', 'talk_time')
-                AND hm.time_period LIKE 'week_2025_%'
             GROUP BY e.name
             HAVING MAX(CASE WHEN hm.metric_type = 'hype_score' THEN hm.value END) IS NOT NULL
             ORDER BY MAX(CASE WHEN hm.metric_type = 'hype_score' THEN hm.value END) DESC
             LIMIT 5
         """
         story_opportunities_raw = execute_query(story_query)
+        
+        # Check if we got results
+        if not story_opportunities_raw:
+            logger.warning("No story opportunities data found")
         
         story_opportunities = []
         for row in story_opportunities_raw:
@@ -864,7 +888,21 @@ def get_available_time_periods_v2(
             GROUP BY time_period
             ORDER BY time_period DESC
         """
+        logger.info(f"Executing time periods query: {query}")
         periods_data = execute_query(query)
+        logger.info(f"Time periods query returned {len(periods_data) if periods_data else 0} rows")
+        
+        # Check if we got results
+        if not periods_data:
+            logger.warning("No time periods found in historical_metrics")
+            return StandardResponse.success(
+                data=[],
+                metadata={
+                    "processing_time_ms": round((time.time() - start_time) * 1000, 2),
+                    "period_count": 0,
+                    "message": "No historical time periods found"
+                }
+            )
         
         # Format periods with labels
         formatted_periods = []
