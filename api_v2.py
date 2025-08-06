@@ -681,27 +681,53 @@ def get_dashboard_widgets_v2(
     start_time = time.time()
     
     try:
-        # Simple query - get top 5 HYPE scores from latest period
+        # Dynamic query - get latest 2 time periods automatically
         top_movers_query = """
-            WITH latest_period AS (
-                SELECT time_period
+            WITH latest_periods AS (
+                SELECT DISTINCT time_period
                 FROM historical_metrics 
                 WHERE time_period LIKE 'week_2025_%'
                 ORDER BY time_period DESC
-                LIMIT 1
+                LIMIT 2
+            ),
+            player_data AS (
+                SELECT 
+                    e.name,
+                    hm.time_period,
+                    hm.value,
+                    ROW_NUMBER() OVER (PARTITION BY e.name ORDER BY hm.time_period DESC) as period_rank
+                FROM historical_metrics hm
+                JOIN entities e ON hm.entity_id = e.id
+                JOIN latest_periods lp ON hm.time_period = lp.time_period
+                WHERE hm.metric_type = 'hype_score'
+                  AND e.category = 'Sports'
+                  AND hm.value IS NOT NULL
+            ),
+            changes AS (
+                SELECT 
+                    name,
+                    MAX(CASE WHEN period_rank = 1 THEN value END) as current_week,
+                    MAX(CASE WHEN period_rank = 2 THEN value END) as previous_week
+                FROM player_data
+                WHERE period_rank <= 2
+                GROUP BY name
             )
             SELECT 
-                e.name as entity_name,
-                hm.value as current_value,
-                0 as previous_value,
-                0 as percent_change
-            FROM historical_metrics hm
-            JOIN entities e ON hm.entity_id = e.id
-            JOIN latest_period lp ON hm.time_period = lp.time_period
-            WHERE hm.metric_type = 'hype_score'
-                AND e.category = 'Sports'
-                AND hm.value IS NOT NULL
-            ORDER BY hm.value DESC
+                name as entity_name,
+                current_week as current_value,
+                COALESCE(previous_week, 0) as previous_value,
+                CASE 
+                    WHEN previous_week IS NOT NULL AND previous_week > 0
+                    THEN ((current_week - previous_week) / previous_week) * 100
+                    ELSE 0
+                END as percent_change
+            FROM changes
+            WHERE current_week IS NOT NULL
+            ORDER BY ABS(CASE 
+                WHEN previous_week IS NOT NULL AND previous_week > 0
+                THEN ((current_week - previous_week) / previous_week) * 100
+                ELSE 0
+            END) DESC
             LIMIT 5
         """
         try:
@@ -732,13 +758,14 @@ def get_dashboard_widgets_v2(
                 if not entity_name or current_value is None:
                     continue
                     
+                percent_change_val = float(percent_change) if percent_change is not None else 0
                 current_value_val = float(current_value) if current_value is not None else 0
                 
                 top_movers.append({
                     "name": entity_name,
                     "current_score": round(current_value_val, 1),
-                    "change": 0,
-                    "trend": "neutral"
+                    "change": round(percent_change_val, 1),
+                    "trend": "up" if percent_change_val > 0 else "down"
                 })
             except Exception as e:
                 logger.error(f"Error processing top mover row {row}: {e}")
