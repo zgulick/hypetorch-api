@@ -26,22 +26,28 @@ logger = logging.getLogger('database')
 # Database configuration
 DATABASE_URL = os.environ.get("DATABASE_URL")
 DB_ENVIRONMENT = os.environ.get("DB_ENVIRONMENT", "development")
+DB_SCHEMA = os.environ.get("DB_SCHEMA", None)  # Customer-specific schema
 CONNECTION_TIMEOUT = 30  # seconds
 
 # Cache for database connections
 _connection_cache = {}
 _last_connection_time = 0
 
-def get_connection():
+def get_connection(schema_name=None):
     """Get a database connection with the appropriate schema."""
     global _connection_cache, _last_connection_time
     
+    # Determine which schema to use
+    target_schema = schema_name or DB_SCHEMA or DB_ENVIRONMENT
+    
     # Check if we have a cached connection and it's recent
     current_time = time.time()
-    if _connection_cache and current_time - _last_connection_time < 60:  # 1 minute timeout
+    cache_key = f"conn_{target_schema}"
+    
+    if cache_key in _connection_cache and current_time - _last_connection_time < 60:  # 1 minute timeout
         try:
             # Test if connection is still alive
-            conn = _connection_cache.get('conn')
+            conn = _connection_cache.get(cache_key)
             if conn and not conn.closed:
                 cursor = conn.cursor()
                 cursor.execute("SELECT 1")
@@ -59,15 +65,16 @@ def get_connection():
     
     # Set the search path to the appropriate schema
     with conn.cursor() as cursor:
-        # Create schema if it doesn't exist
-        cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_ENVIRONMENT}")
-        # Set search path to our environment
-        cursor.execute(f"SET search_path TO {DB_ENVIRONMENT}")
+        # Create schema if it doesn't exist (only for non-customer schemas)
+        if not target_schema.startswith('customer_'):
+            cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {target_schema}")
+        # Set search path to our schema
+        cursor.execute(f"SET search_path TO {target_schema}")
     
     conn.commit()
     
     # Cache the connection
-    _connection_cache['conn'] = conn
+    _connection_cache[cache_key] = conn
     _last_connection_time = current_time
     
     return conn
@@ -84,7 +91,7 @@ def close_connections():
         
     _connection_cache = {}
 
-def execute_query(query, params=None, fetch=True):
+def execute_query(query, params=None, fetch=True, schema_name=None):
     """
     Execute a database query and optionally return results.
     
@@ -92,20 +99,21 @@ def execute_query(query, params=None, fetch=True):
         query: SQL query to execute
         params: Parameters for the query
         fetch: Whether to fetch and return results
+        schema_name: Optional schema to use for this query
     
     Returns:
         Query results if fetch=True, otherwise None
     """
     conn = None
     try:
-        conn = get_connection()
+        conn = get_connection(schema_name)
         with conn.cursor() as cursor:
-            # Set search path for schema
-            if DB_ENVIRONMENT:
-                cursor.execute(f"SET search_path TO {DB_ENVIRONMENT};")
+            # Set search path for schema (redundant but safe)
+            target_schema = schema_name or DB_SCHEMA or DB_ENVIRONMENT
+            cursor.execute(f"SET search_path TO {target_schema};")
             
             # Log query details for debugging
-            logger.info(f"Executing query with params: {params}")
+            logger.info(f"Executing query in schema '{target_schema}' with params: {params}")
             
             # Handle params safely
             if params is None:
@@ -124,6 +132,10 @@ def execute_query(query, params=None, fetch=True):
                     columns = [desc[0] for desc in cursor.description]
                     for row in rows:
                         result.append(dict(zip(columns, row)))
+                
+                # Commit if this was an INSERT/UPDATE/DELETE with RETURNING
+                if query.strip().upper().startswith(('INSERT', 'UPDATE', 'DELETE')) and 'RETURNING' in query.upper():
+                    conn.commit()
             else:
                 result = None
                 conn.commit()
@@ -189,13 +201,14 @@ def initialize_database():
         return False
 
 # Entity operations
-def get_entities(category=None, subcategory=None):
+def get_entities(category=None, subcategory=None, schema_name=None):
     """
     Get a list of entities, optionally filtered by category and subcategory.
     
     Args:
         category: Optional category filter
         subcategory: Optional subcategory filter
+        schema_name: Optional schema to query
     
     Returns:
         List of entity dictionaries
@@ -219,7 +232,7 @@ def get_entities(category=None, subcategory=None):
     
     query += " ORDER BY name"
     
-    return execute_query(query, params)
+    return execute_query(query, params, schema_name=schema_name)
 
 def get_entity_current_metrics(entity_id, metric_types=None):
     """Get current metrics for an entity from the current_metrics table."""
@@ -389,33 +402,34 @@ def find_related_entities(entity_id, relationship_types=None, limit=10):
     """Stub function - relationships not implemented yet."""
     return []
 
-def get_entity_by_name(name):
+def get_entity_by_name(name, schema_name=None):
     """
     Get entity details by name.
     
     Args:
         name: Entity name
+        schema_name: Optional schema to query
     
     Returns:
         Entity dictionary or None if not found
     """
     # Try exact match first
     query = "SELECT id, name, type, category, subcategory FROM entities WHERE name = %s"
-    result = execute_query(query, (name,))
+    result = execute_query(query, (name,), schema_name=schema_name)
     
     if result:
         return result[0]
     
     # Try case-insensitive match
     query = "SELECT id, name, type, category, subcategory FROM entities WHERE LOWER(name) = LOWER(%s)"
-    result = execute_query(query, (name,))
+    result = execute_query(query, (name,), schema_name=schema_name)
     
     if result:
         return result[0]
     
     # Try partial match as last resort
     query = "SELECT id, name, type, category, subcategory FROM entities WHERE name ILIKE %s LIMIT 1"
-    result = execute_query(query, (f"%{name}%",))
+    result = execute_query(query, (f"%{name}%",), schema_name=schema_name)
     
     if result:
         return result[0]
@@ -586,12 +600,13 @@ def get_hype_score_history(entity_id, limit=30):
         logger.error(f"Error getting HYPE score history: {e}")
         return []
 
-def create_entity(entity_data):
+def create_entity(entity_data, schema_name=None):
     """
     Create a new entity.
     
     Args:
         entity_data: Dictionary with entity details
+        schema_name: Optional schema to create entity in
     
     Returns:
         (success, message) tuple
@@ -607,7 +622,7 @@ def create_entity(entity_data):
         metadata = json.dumps(entity_data.get("metadata", {}))
         
         # Check if entity already exists
-        existing = get_entity_by_name(name)
+        existing = get_entity_by_name(name, schema_name=schema_name)
         if existing:
             return False, f"Entity '{name}' already exists"
         
@@ -617,7 +632,7 @@ def create_entity(entity_data):
             VALUES (%s, %s, %s, %s, %s)
             RETURNING id
         """
-        result = execute_query(query, (name, entity_type, category, subcategory, metadata))
+        result = execute_query(query, (name, entity_type, category, subcategory, metadata), fetch=True, schema_name=schema_name)
         
         if result:
             return True, f"Entity '{name}' created successfully"
@@ -751,7 +766,7 @@ def delete_entity(entity_name):
         return False, str(e)
 
 # Metric operations
-def save_metric(entity_id, metric_type, value, time_period=None, is_historical=False):
+def save_metric(entity_id, metric_type, value, time_period=None, is_historical=False, schema_name=None):
     """
     Save a metric value.
     
@@ -761,6 +776,7 @@ def save_metric(entity_id, metric_type, value, time_period=None, is_historical=F
         value: Metric value
         time_period: Optional time period (e.g., 'last_30_days')
         is_historical: Whether to save as historical data
+        schema_name: Optional schema to save to
     
     Returns:
         Success boolean
@@ -772,7 +788,7 @@ def save_metric(entity_id, metric_type, value, time_period=None, is_historical=F
                 INSERT INTO historical_metrics (entity_id, metric_type, value, time_period)
                 VALUES (%s, %s, %s, %s)
             """
-            execute_query(query, (entity_id, metric_type, value, time_period), fetch=False)
+            execute_query(query, (entity_id, metric_type, value, time_period), fetch=False, schema_name=schema_name)
         else:
             # Save to current_metrics (upsert)
             query = """
@@ -783,20 +799,21 @@ def save_metric(entity_id, metric_type, value, time_period=None, is_historical=F
                     time_period = EXCLUDED.time_period,
                     timestamp = CURRENT_TIMESTAMP
             """
-            execute_query(query, (entity_id, metric_type, value, time_period), fetch=False)
+            execute_query(query, (entity_id, metric_type, value, time_period), fetch=False, schema_name=schema_name)
         
         return True
     except Exception as e:
         logger.error(f"Error saving metric: {e}")
         return False
 
-def get_current_metrics(entity_id=None, metric_types=None):
+def get_current_metrics(entity_id=None, metric_types=None, schema_name=None):
     """
     Get current metrics, optionally filtered by entity and metric types.
     
     Args:
         entity_id: Optional entity ID filter
         metric_types: Optional list of metric types
+        schema_name: Optional schema to query
     
     Returns:
         List of metric dictionaries
@@ -804,7 +821,7 @@ def get_current_metrics(entity_id=None, metric_types=None):
     query = """
         SELECT cm.id, cm.entity_id, e.name as entity_name, cm.metric_type, cm.value, 
                cm.timestamp, cm.time_period
-        FROM metrics cm
+        FROM current_metrics cm
         JOIN entities e ON cm.entity_id = e.id
     """
     params = []
@@ -823,7 +840,7 @@ def get_current_metrics(entity_id=None, metric_types=None):
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     
-    return execute_query(query, params)
+    return execute_query(query, params, schema_name=schema_name)
 
 def get_historical_metrics(entity_id, metric_type, limit=30, start_date=None, end_date=None):
     """
@@ -1761,6 +1778,106 @@ def import_entities_from_json():
     except Exception as e:
         logger.error(f"Error importing entities: {e}")
         return False, str(e)
+
+# Customer-specific functions
+def get_entities_from_schema(schema_name):
+    """Get entities from a specific schema."""
+    return get_entities(schema_name=schema_name)
+
+def get_current_metrics_from_schema(schema_name):
+    """Get current metrics from a specific schema.""" 
+    return get_current_metrics(schema_name=schema_name)
+
+def get_entity_by_name_and_schema(entity_name, schema_name):
+    """Get entity by name from a specific schema."""
+    return get_entity_by_name(entity_name, schema_name=schema_name)
+
+def create_entity_in_schema(entity_data, schema_name):
+    """Create entity in a specific schema."""
+    return create_entity(entity_data, schema_name=schema_name)
+
+def save_metric_to_schema(entity_id, metric_type, value, time_period=None, is_historical=False, schema_name=None):
+    """Save metric to a specific schema."""
+    return save_metric(entity_id, metric_type, value, time_period, is_historical, schema_name)
+
+def execute_transaction_in_schema(queries, schema_name):
+    """Execute multiple queries in a transaction within a specific schema."""
+    conn = None
+    try:
+        conn = get_connection(schema_name)
+        with conn.cursor() as cursor:
+            # Set search path for schema
+            cursor.execute(f"SET search_path TO {schema_name};")
+            
+            for query, params in queries:
+                if params is None:
+                    cursor.execute(query)
+                else:
+                    cursor.execute(query, params or ())
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Transaction error in schema {schema_name}: {e}")
+        if conn:
+            conn.rollback()
+        return False
+
+def bulk_import_entities_to_schema(entities_data, schema_name):
+    """
+    Bulk import entities to a specific schema.
+    
+    Args:
+        entities_data: List of entity dictionaries
+        schema_name: Target schema name
+    
+    Returns:
+        (success_count, error_count) tuple
+    """
+    success_count = 0
+    error_count = 0
+    
+    for entity_data in entities_data:
+        try:
+            success, message = create_entity_in_schema(entity_data, schema_name)
+            if success:
+                success_count += 1
+            else:
+                error_count += 1
+                logger.warning(f"Failed to import entity {entity_data.get('name')}: {message}")
+        except Exception as e:
+            error_count += 1
+            logger.error(f"Error importing entity {entity_data.get('name')}: {e}")
+    
+    return success_count, error_count
+
+def get_schema_summary(schema_name):
+    """Get a summary of data in a schema."""
+    try:
+        entities = get_entities_from_schema(schema_name)
+        current_metrics = get_current_metrics_from_schema(schema_name)
+        
+        # Group metrics by type
+        metrics_by_type = {}
+        for metric in current_metrics:
+            metric_type = metric['metric_type']
+            if metric_type not in metrics_by_type:
+                metrics_by_type[metric_type] = []
+            metrics_by_type[metric_type].append(metric)
+        
+        return {
+            'schema_name': schema_name,
+            'entity_count': len(entities),
+            'total_metrics': len(current_metrics),
+            'entities': entities,
+            'metrics_by_type': metrics_by_type,
+            'available_metric_types': list(metrics_by_type.keys())
+        }
+    except Exception as e:
+        logger.error(f"Error getting schema summary: {e}")
+        return {
+            'schema_name': schema_name,
+            'error': str(e)
+        }
 
 # Initialize the module
 if __name__ == "__main__":

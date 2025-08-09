@@ -16,3 +16,142 @@ LINE 4:         FROM current_metrics cm
 2025-08-05 08:40:26,420 - database - INFO - Database initialized successfully
 2025-08-05 20:14:23,854 - database - ERROR - Database error: tuple index out of range
 2025-08-05 20:14:32,981 - database - ERROR - Database error: tuple index out of range
+2025-08-07 19:58:50,984 - database - INFO - Executing query in schema 'customer_demo_customer' with params: []
+2025-08-07 19:58:51,139 - database - INFO - Query returned 0 rows
+2025-08-07 19:59:26,150 - database - INFO - Executing query in schema 'customer_demo_customer' with params: None
+2025-08-07 19:59:26,301 - database - INFO - Query returned 0 rows
+2025-08-07 19:59:36,242 - database - INFO - Executing query in schema 'customer_demo_customer' with params: ('Test Entity',)
+2025-08-07 19:59:36,403 - database - INFO - Query returned 0 rows
+2025-08-07 19:59:36,709 - database - INFO - Executing query in schema 'customer_demo_customer' with params: ('Test Entity',)
+2025-08-07 19:59:36,861 - database - INFO - Query returned 0 rows
+2025-08-07 19:59:37,171 - database - INFO - Executing query in schema 'customer_demo_customer' with params: ('%Test Entity%',)
+2025-08-07 19:59:37,326 - database - INFO - Query returned 0 rows
+2025-08-07 19:59:37,630 - database - INFO - Executing query in schema 'customer_demo_customer' with params: ('Test Entity', 'person', 'Sports', 'Basketball', '{}')
+2025-08-07 19:59:37,804 - database - INFO - Query returned 1 rows
+2025-08-07 19:59:38,199 - database - INFO - Executing query in schema 'customer_demo_customer' with params: None
+2025-08-07 19:59:38,469 - database - INFO - Query returned 1 rows
+2025-08-07 22:28:21,281 - database - INFO - Executing query in schema 'customer_test_real' with params: []
+2025-08-07 22:28:21,440 - database - INFO - Query returned 15 rows
+2025-08-08 07:22:10,619 - database - ERROR - Error creating entity: 'str' object has no attribute 'get'
+2025-08-08 07:23:16,333 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Caleb Williams',)
+2025-08-08 07:23:16,490 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:16,796 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Caleb Williams',)
+2025-08-08 07:23:16,949 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:17,256 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Caleb Williams%',)
+2025-08-08 07:23:17,414 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:17,719 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Caleb Williams', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:17,874 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:18,520 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Ben Johnson',)
+2025-08-08 07:23:18,673 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:18,982 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Ben Johnson',)
+2025-08-08 07:23:19,141 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:19,454 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Ben Johnson%',)
+2025-08-08 07:23:19,607 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:19,940 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Ben Johnson', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:20,096 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:20,787 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Rome Odunze',)
+2025-08-08 07:23:20,949 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:21,254 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Rome Odunze',)
+2025-08-08 07:23:21,408 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:21,723 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Rome Odunze%',)
+2025-08-08 07:23:21,881 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:22,199 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Rome Odunze', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:22,352 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:22,986 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ("D'Andre Swift",)
+2025-08-08 07:23:23,156 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:23,478 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ("D'Andre Swift",)
+2025-08-08 07:23:23,632 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:23,949 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ("%D'Andre Swift%",)
+2025-08-08 07:23:24,111 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:24,428 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ("D'Andre Swift", 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:24,590 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:25,221 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('DJ Moore',)
+2025-08-08 07:23:25,375 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:25,689 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('DJ Moore',)
+2025-08-08 07:23:25,842 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:26,150 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%DJ Moore%',)
+2025-08-08 07:23:26,302 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:26,613 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('DJ Moore', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:26,777 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:27,404 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Luther Burden',)
+2025-08-08 07:23:27,610 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:27,936 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Luther Burden',)
+2025-08-08 07:23:28,089 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:28,504 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Luther Burden%',)
+2025-08-08 07:23:28,657 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:28,968 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Luther Burden', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:29,122 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:29,734 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Cole Kmet',)
+2025-08-08 07:23:29,892 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:30,196 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Cole Kmet',)
+2025-08-08 07:23:30,349 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:30,652 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Cole Kmet%',)
+2025-08-08 07:23:30,804 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:31,108 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Cole Kmet', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:31,261 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:31,869 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Montez Sweat',)
+2025-08-08 07:23:32,022 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:32,328 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Montez Sweat',)
+2025-08-08 07:23:32,480 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:32,785 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Montez Sweat%',)
+2025-08-08 07:23:32,938 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:33,242 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Montez Sweat', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:33,395 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:34,004 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Grady Jarrett',)
+2025-08-08 07:23:34,181 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:34,490 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Grady Jarrett',)
+2025-08-08 07:23:34,642 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:34,946 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Grady Jarrett%',)
+2025-08-08 07:23:35,099 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:35,406 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Grady Jarrett', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:35,563 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:36,173 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Tremaine Edmonds',)
+2025-08-08 07:23:36,325 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:36,635 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Tremaine Edmonds',)
+2025-08-08 07:23:36,796 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:37,106 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Tremaine Edmonds%',)
+2025-08-08 07:23:37,258 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:37,561 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Tremaine Edmonds', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:37,713 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:38,334 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Jaylon Johnson',)
+2025-08-08 07:23:38,489 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:38,827 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Jaylon Johnson',)
+2025-08-08 07:23:38,979 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:39,293 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Jaylon Johnson%',)
+2025-08-08 07:23:39,453 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:39,758 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Jaylon Johnson', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:39,911 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:40,752 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Kevin Byard',)
+2025-08-08 07:23:40,904 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:41,211 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Kevin Byard',)
+2025-08-08 07:23:41,364 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:41,668 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Kevin Byard%',)
+2025-08-08 07:23:41,822 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:42,126 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Kevin Byard', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:42,278 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:42,892 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Cairo Santos',)
+2025-08-08 07:23:43,043 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:43,350 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Cairo Santos',)
+2025-08-08 07:23:43,502 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:43,811 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Cairo Santos%',)
+2025-08-08 07:23:43,979 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:44,365 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Cairo Santos', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:44,517 - database - INFO - Query returned 1 rows
+2025-08-08 07:23:45,132 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Tory Taylor',)
+2025-08-08 07:23:45,284 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:45,593 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Tory Taylor',)
+2025-08-08 07:23:45,750 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:46,054 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('%Tory Taylor%',)
+2025-08-08 07:23:46,206 - database - INFO - Query returned 0 rows
+2025-08-08 07:23:46,509 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: ('Tory Taylor', 'person', 'NFL', 'Chicago_Bears', '{}')
+2025-08-08 07:23:46,664 - database - INFO - Query returned 1 rows
+2025-08-08 07:24:20,462 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: []
+2025-08-08 07:24:20,615 - database - INFO - Query returned 14 rows
+2025-08-08 20:46:00,473 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: None
+2025-08-08 20:46:00,637 - database - INFO - Query returned 1 rows
+2025-08-08 20:46:00,944 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: None
+2025-08-08 20:46:01,098 - database - INFO - Query returned 1 rows
+2025-08-08 20:46:01,435 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: None
+2025-08-08 20:46:01,602 - database - INFO - Query returned 5 rows
+2025-08-08 20:46:01,905 - database - INFO - Executing query in schema 'customer_chicago_bears' with params: None
+2025-08-08 20:46:02,069 - database - INFO - Query returned 5 rows
