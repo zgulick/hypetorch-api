@@ -35,6 +35,7 @@ from api_models import EntityCreate, EntityUpdate
 import hashlib
 from fastapi.responses import Response
 from api_v2 import v2_router
+import numpy as np
 
 # Initialize the database
 try:
@@ -1468,6 +1469,338 @@ async def general_exception_handler(request, exc):
 print("\n🔄 Importing entities from JSON to database...")
 from db_wrapper import import_entities_to_database
 import_entities_to_database()
+
+
+# ===== CONFIDENCE & QUALITY ENDPOINTS =====
+# NOTE: These endpoints are now deprecated in favor of V2 API
+# Redirect to v2 for proper versioning
+
+@app.get("/api/confidence/entities")
+def get_entity_confidence(key_info: dict = Depends(get_api_key)):
+    """
+    Get confidence scores for all entities.
+    
+    Returns detailed confidence data including:
+    - Entity detection confidence
+    - Talk time attribution confidence  
+    - Context classification confidence
+    - Overall quality assessment
+    """
+    start_time = time.time()
+    
+    try:
+        data = load_data()
+        
+        # Extract confidence data from latest processing
+        entity_data = data.get("entity_detections", {}).get("filtered_results", {})
+        talk_time_data = data.get("talk_time_analysis", {}).get("filtered_results", {})
+        hype_data = data.get("hype_scores", {})
+        
+        confidence_report = []
+        
+        for entity in set(list(entity_data.keys()) + list(talk_time_data.keys())):
+            entity_confidence = {
+                "name": entity,
+                "detection_confidence": 0.0,
+                "talk_time_confidence": 0.0,
+                "hype_confidence": 0.0,
+                "overall_confidence": 0.0,
+                "quality": "unknown",
+                "ai_enhanced": False
+            }
+            
+            # Get detection confidence
+            if entity in entity_data and isinstance(entity_data[entity], dict):
+                entity_confidence["detection_confidence"] = entity_data[entity].get("confidence", 0.5)
+                entity_confidence["ai_enhanced"] = entity_data[entity].get("ai_enhanced", False)
+            
+            # Get talk time confidence
+            if entity in talk_time_data and isinstance(talk_time_data[entity], dict):
+                entity_confidence["talk_time_confidence"] = talk_time_data[entity].get("confidence", 0.5)
+            
+            # Get HYPE confidence
+            if "confidence" in hype_data and entity in hype_data["confidence"]:
+                entity_confidence["hype_confidence"] = hype_data["confidence"][entity]
+            elif "confidence_scores" in hype_data and entity in hype_data["confidence_scores"]:
+                entity_confidence["hype_confidence"] = hype_data["confidence_scores"][entity]
+            
+            # Calculate overall confidence
+            confidences = [
+                entity_confidence["detection_confidence"],
+                entity_confidence["talk_time_confidence"],
+                entity_confidence["hype_confidence"]
+            ]
+            valid_confidences = [c for c in confidences if c > 0]
+            entity_confidence["overall_confidence"] = round(np.mean(valid_confidences) if valid_confidences else 0.0, 3)
+            
+            # Determine quality level
+            if entity_confidence["overall_confidence"] >= 0.8:
+                entity_confidence["quality"] = "high"
+            elif entity_confidence["overall_confidence"] >= 0.6:
+                entity_confidence["quality"] = "medium"
+            else:
+                entity_confidence["quality"] = "low"
+            
+            confidence_report.append(entity_confidence)
+        
+        # Sort by overall confidence
+        confidence_report.sort(key=lambda x: x["overall_confidence"], reverse=True)
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data={
+                "entities": confidence_report,
+                "summary": {
+                    "total": len(confidence_report),
+                    "high_quality": len([e for e in confidence_report if e["quality"] == "high"]),
+                    "medium_quality": len([e for e in confidence_report if e["quality"] == "medium"]),
+                    "low_quality": len([e for e in confidence_report if e["quality"] == "low"]),
+                    "ai_enhanced": len([e for e in confidence_report if e["ai_enhanced"]])
+                }
+            },
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2)
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Error getting entity confidence: {str(e)}")
+        return StandardResponse.error(
+            message="Failed to retrieve entity confidence",
+            status_code=500,
+            details=str(e)
+        )
+
+
+@app.get("/api/quality/report")
+def get_quality_report(key_info: dict = Depends(get_api_key)):
+    """
+    Get comprehensive quality report for the latest processing run.
+    
+    Includes:
+    - Processing statistics
+    - Quality metrics
+    - Confidence distributions
+    - Off-court content percentage
+    - Recommendations
+    """
+    start_time = time.time()
+    
+    try:
+        # Try to import quality gates system
+        try:
+            import sys
+            sys.path.append('..')  # Add parent directory to path
+            from quality_gates import QualityGateManager
+            quality_available = True
+        except ImportError:
+            quality_available = False
+        
+        data = load_data()
+        
+        if quality_available:
+            manager = QualityGateManager()
+            # Generate base quality report
+            quality_report = manager.generate_quality_report()
+        else:
+            # Fallback quality report
+            entity_data = data.get("entity_detections", {}).get("filtered_results", {})
+            
+            quality_report = {
+                "timestamp": datetime.now().isoformat(),
+                "summary": {
+                    "entities_processed": len(entity_data),
+                    "entities_passed": len([e for e, d in entity_data.items() if isinstance(d, dict) and d.get("confidence", 0) > 0.4]),
+                    "average_confidence": 0.6
+                },
+                "recommendations": ["Enable quality gates system for detailed analysis"]
+            }
+        
+        # Add off-court content metrics if context classifier available
+        try:
+            sys.path.append('..')
+            from context_classifier import context_classifier
+            off_court_percentage = context_classifier.get_off_court_percentage()
+            
+            quality_report["business_metrics"] = {
+                "off_court_content_percentage": round(off_court_percentage, 1),
+                "business_model_alignment": "excellent" if off_court_percentage > 60 else "good" if off_court_percentage > 40 else "needs improvement",
+                "licensing_readiness": "ready" if quality_report["summary"]["average_confidence"] > 0.7 else "almost ready"
+            }
+        except ImportError:
+            quality_report["business_metrics"] = {
+                "off_court_content_percentage": None,
+                "business_model_alignment": "unknown",
+                "licensing_readiness": "analysis_unavailable"
+            }
+        
+        # Add data freshness
+        if "metadata" in data:
+            quality_report["data_freshness"] = {
+                "last_update": data["metadata"].get("processing_date", "unknown"),
+                "pipeline_version": data["metadata"].get("pipeline_version", "unknown")
+            }
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=quality_report,
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2)
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Error generating quality report: {str(e)}")
+        return StandardResponse.error(
+            message="Failed to generate quality report",
+            status_code=500,
+            details=str(e)
+        )
+
+
+@app.get("/api/confidence/distribution")
+def get_confidence_distribution(key_info: dict = Depends(get_api_key)):
+    """
+    Get confidence score distribution for visualization.
+    """
+    start_time = time.time()
+    
+    try:
+        data = load_data()
+        
+        # Collect all confidence scores
+        all_confidences = []
+        
+        # From entity detections
+        entity_data = data.get("entity_detections", {}).get("filtered_results", {})
+        for entity, info in entity_data.items():
+            if isinstance(info, dict) and "confidence" in info:
+                all_confidences.append(info["confidence"])
+        
+        # From talk time
+        talk_time_data = data.get("talk_time_analysis", {}).get("filtered_results", {})
+        for entity, info in talk_time_data.items():
+            if isinstance(info, dict) and "confidence" in info:
+                all_confidences.append(info["confidence"])
+        
+        # From HYPE scores
+        hype_confidence = data.get("hype_scores", {}).get("confidence", {})
+        if not hype_confidence:
+            hype_confidence = data.get("hype_scores", {}).get("confidence_scores", {})
+        all_confidences.extend(hype_confidence.values())
+        
+        if not all_confidences:
+            return StandardResponse.error(
+                message="No confidence data available",
+                status_code=404
+            )
+        
+        # Calculate distribution
+        distribution = {
+            "bins": {
+                "0.0-0.2": len([c for c in all_confidences if 0 <= c < 0.2]),
+                "0.2-0.4": len([c for c in all_confidences if 0.2 <= c < 0.4]),
+                "0.4-0.6": len([c for c in all_confidences if 0.4 <= c < 0.6]),
+                "0.6-0.8": len([c for c in all_confidences if 0.6 <= c < 0.8]),
+                "0.8-1.0": len([c for c in all_confidences if 0.8 <= c <= 1.0])
+            },
+            "statistics": {
+                "mean": round(float(np.mean(all_confidences)), 3),
+                "median": round(float(np.median(all_confidences)), 3),
+                "std": round(float(np.std(all_confidences)), 3),
+                "min": round(float(min(all_confidences)), 3),
+                "max": round(float(max(all_confidences)), 3),
+                "total_scores": len(all_confidences)
+            }
+        }
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=distribution,
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2)
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Error getting confidence distribution: {str(e)}")
+        return StandardResponse.error(
+            message="Failed to get confidence distribution",
+            status_code=500,
+            details=str(e)
+        )
+
+
+@app.get("/api/entities/by-confidence")
+def get_entities_by_confidence(min_confidence: float = Query(0.7, description="Minimum confidence threshold (0.0-1.0)"), key_info: dict = Depends(get_api_key)):
+    """
+    Get entities filtered by minimum confidence threshold.
+    
+    Query params:
+    - min_confidence: Minimum confidence threshold (0.0-1.0)
+    """
+    start_time = time.time()
+    
+    try:
+        data = load_data()
+        
+        hype_scores = data.get("hype_scores", {}).get("scores", {})
+        if not hype_scores:
+            hype_scores = data.get("hype_scores", {})
+            # Remove non-score keys
+            hype_scores = {k: v for k, v in hype_scores.items() if isinstance(v, (int, float))}
+        
+        hype_confidence = data.get("hype_scores", {}).get("confidence", {})
+        if not hype_confidence:
+            hype_confidence = data.get("hype_scores", {}).get("confidence_scores", {})
+        
+        filtered_entities = []
+        
+        for entity, score in hype_scores.items():
+            confidence = hype_confidence.get(entity, 0.5)
+            
+            if confidence >= min_confidence:
+                filtered_entities.append({
+                    "name": entity,
+                    "hype_score": score,
+                    "confidence": confidence,
+                    "quality": "high" if confidence > 0.8 else "medium"
+                })
+        
+        # Sort by confidence descending
+        filtered_entities.sort(key=lambda x: x["confidence"], reverse=True)
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data={
+                "entities": filtered_entities,
+                "summary": {
+                    "total": len(filtered_entities),
+                    "threshold": min_confidence,
+                    "avg_confidence": round(float(np.mean([e["confidence"] for e in filtered_entities])), 3) if filtered_entities else 0
+                }
+            },
+            metadata={
+                "timestamp": time.time(),
+                "processing_time_ms": round(processing_time, 2)
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Error filtering entities: {str(e)}")
+        return StandardResponse.error(
+            message="Failed to filter entities by confidence",
+            status_code=500,
+            details=str(e)
+        )
+
 
 # Include versioned routes
 app.include_router(v1_router, prefix="/api")

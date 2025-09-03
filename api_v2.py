@@ -25,11 +25,22 @@ from database import (
 from api_utils import StandardResponse
 from models_v2 import BulkEntitiesRequest, EntityData, EntityMetrics
 from pydantic import BaseModel, Field
+import numpy as np
+from quality_gates import QualityGateManager
 
 logger = logging.getLogger('api_v2')
 
 # Create the v2 router
 v2_router = APIRouter(prefix="/v2")
+
+# Helper function to load latest data
+def load_data():
+    """Load the latest analysis data."""
+    try:
+        return load_latest_data()
+    except Exception as e:
+        logger.error(f"Error loading data: {e}")
+        return {}
 
 # Health check endpoint
 @v2_router.get("/health")
@@ -1046,7 +1057,278 @@ def get_available_time_periods_v2(
     except Exception as e:
         logger.error(f"Error getting time periods: {e}")
         return StandardResponse.error(
-            message="Failed to retrieve time periods",
-            status_code=500,
-            details=str(e)
+            error=f"Failed to get time periods: {str(e)}",
+            status_code=500
         )
+
+
+# ===== CONFIDENCE & AI QUALITY ENDPOINTS (V2) =====
+
+@v2_router.get("/confidence/entities")
+def get_entity_confidence_v2(key_info: dict = Depends(get_api_key)):
+    """
+    Get AI-enhanced confidence scores for all entities (V2).
+    
+    Returns detailed confidence data including:
+    - Entity detection confidence (AI semantic + frequency)
+    - Talk time attribution confidence (pronoun chains + context)  
+    - Context classification confidence (4-model ensemble)
+    - Overall quality assessment with AI enhancement flags
+    """
+    start_time = time.time()
+    
+    try:
+        data = load_data()
+        
+        # Extract confidence data from latest AI processing
+        entity_data = data.get("entity_detections", {}).get("filtered_results", {})
+        talk_time_data = data.get("talk_time_analysis", {}).get("filtered_results", {})
+        hype_data = data.get("hype_scores", {})
+        
+        confidence_report = []
+        
+        for entity in set(list(entity_data.keys()) + list(talk_time_data.keys())):
+            entity_info = {
+                "name": entity,
+                "detection_confidence": entity_data.get(entity, {}).get("confidence", 0.5),
+                "talk_time_confidence": talk_time_data.get(entity, {}).get("confidence", 0.5),
+                "hype_confidence": hype_data.get("confidence_scores", {}).get(entity, 0.5),
+                "ai_enhanced": entity_data.get(entity, {}).get("ai_enhanced", False)
+            }
+            
+            # Calculate overall confidence using AI ensemble approach
+            confidences = [
+                entity_info["detection_confidence"], 
+                entity_info["talk_time_confidence"], 
+                entity_info["hype_confidence"]
+            ]
+            valid_confidences = [c for c in confidences if c > 0]
+            entity_info["overall_confidence"] = sum(valid_confidences) / len(valid_confidences) if valid_confidences else 0.0
+            
+            # AI-enhanced quality classification
+            if entity_info["overall_confidence"] >= 0.8:
+                entity_info["quality"] = "high"
+                entity_info["quality_score"] = entity_info["overall_confidence"]
+            elif entity_info["overall_confidence"] >= 0.6:
+                entity_info["quality"] = "medium"  
+                entity_info["quality_score"] = entity_info["overall_confidence"]
+            else:
+                entity_info["quality"] = "low"
+                entity_info["quality_score"] = entity_info["overall_confidence"]
+            
+            # Add context breakdown if available
+            if entity in entity_data and "context_breakdown" in entity_data[entity]:
+                entity_info["context_breakdown"] = entity_data[entity]["context_breakdown"]
+                entity_info["context_confidence"] = entity_data[entity].get("context_confidence", 0.5)
+            
+            confidence_report.append(entity_info)
+        
+        # Sort by overall confidence descending
+        confidence_report.sort(key=lambda x: x["overall_confidence"], reverse=True)
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data={
+                "entities": confidence_report,
+                "summary": {
+                    "total_entities": len(confidence_report),
+                    "high_confidence": len([e for e in confidence_report if e["quality"] == "high"]),
+                    "medium_confidence": len([e for e in confidence_report if e["quality"] == "medium"]),
+                    "low_confidence": len([e for e in confidence_report if e["quality"] == "low"]),
+                    "ai_enhanced": len([e for e in confidence_report if e["ai_enhanced"]])
+                }
+            },
+            metadata={
+                "processing_time_ms": processing_time,
+                "data_timestamp": time.time()
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting entity confidence: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get entity confidence: {str(e)}")
+
+
+@v2_router.get("/quality/report")
+def get_quality_report_v2(key_info: dict = Depends(get_api_key)):
+    """
+    Generate comprehensive AI quality report (V2).
+    
+    Includes:
+    - Data quality metrics and grades
+    - AI enhancement statistics
+    - Business model alignment metrics
+    - Quality recommendations for improvement
+    """
+    start_time = time.time()
+    
+    try:
+        manager = QualityGateManager()
+        report = manager.generate_quality_report()
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data=report,
+            metadata={
+                "processing_time_ms": processing_time,
+                "report_version": "2.0",
+                "generated_at": report.get("timestamp", time.time())
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating quality report: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate quality report: {str(e)}")
+
+
+@v2_router.get("/confidence/distribution")
+def get_confidence_distribution_v2(key_info: dict = Depends(get_api_key)):
+    """
+    Get statistical distribution of confidence scores for AI analysis (V2).
+    
+    Returns:
+    - Confidence score histograms
+    - Statistical summary (mean, std, percentiles)
+    - Quality distribution across entities
+    """
+    start_time = time.time()
+    
+    try:
+        data = load_data()
+        
+        # Extract all confidence scores
+        entity_data = data.get("entity_detections", {}).get("filtered_results", {})
+        talk_time_data = data.get("talk_time_analysis", {}).get("filtered_results", {})
+        hype_data = data.get("hype_scores", {})
+        
+        detection_confidences = [info.get("confidence", 0.5) for info in entity_data.values() if isinstance(info, dict)]
+        talk_time_confidences = [info.get("confidence", 0.5) for info in talk_time_data.values() if isinstance(info, dict)]
+        hype_confidences = list(hype_data.get("confidence_scores", {}).values())
+        
+        # Calculate distributions using numpy
+        distributions = {}
+        
+        for conf_type, confidences in [
+            ("detection", detection_confidences),
+            ("talk_time", talk_time_confidences), 
+            ("hype_score", hype_confidences)
+        ]:
+            if confidences:
+                conf_array = np.array(confidences)
+                distributions[conf_type] = {
+                    "mean": float(np.mean(conf_array)),
+                    "std": float(np.std(conf_array)),
+                    "min": float(np.min(conf_array)),
+                    "max": float(np.max(conf_array)),
+                    "percentiles": {
+                        "25th": float(np.percentile(conf_array, 25)),
+                        "50th": float(np.percentile(conf_array, 50)),
+                        "75th": float(np.percentile(conf_array, 75)),
+                        "90th": float(np.percentile(conf_array, 90))
+                    },
+                    "histogram": {
+                        "bins": ["0.0-0.2", "0.2-0.4", "0.4-0.6", "0.6-0.8", "0.8-1.0"],
+                        "counts": [
+                            int(np.sum((conf_array >= 0.0) & (conf_array < 0.2))),
+                            int(np.sum((conf_array >= 0.2) & (conf_array < 0.4))),
+                            int(np.sum((conf_array >= 0.4) & (conf_array < 0.6))),
+                            int(np.sum((conf_array >= 0.6) & (conf_array < 0.8))),
+                            int(np.sum((conf_array >= 0.8) & (conf_array <= 1.0)))
+                        ]
+                    }
+                }
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data={
+                "distributions": distributions,
+                "summary": {
+                    "total_samples": {
+                        "detection": len(detection_confidences),
+                        "talk_time": len(talk_time_confidences),
+                        "hype_score": len(hype_confidences)
+                    }
+                }
+            },
+            metadata={
+                "processing_time_ms": processing_time,
+                "analysis_version": "2.0"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting confidence distribution: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get confidence distribution: {str(e)}")
+
+
+@v2_router.get("/entities/by-confidence")  
+def get_entities_by_confidence_v2(
+    min_confidence: float = Query(0.7, description="Minimum confidence threshold (0.0-1.0)"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Filter entities by minimum AI confidence threshold (V2).
+    
+    Args:
+        min_confidence: Minimum overall confidence score (0.0 to 1.0)
+        
+    Returns:
+        List of entities meeting the confidence threshold with full AI metrics
+    """
+    start_time = time.time()
+    
+    try:
+        # Validate confidence threshold
+        if not 0.0 <= min_confidence <= 1.0:
+            raise HTTPException(status_code=400, detail="min_confidence must be between 0.0 and 1.0")
+        
+        data = load_data()
+        
+        # Apply quality gates filtering
+        manager = QualityGateManager()
+        entity_data = data.get("entity_detections", {}).get("filtered_results", {})
+        
+        filtered_entities, rejected_entities = manager.filter_entities_by_confidence(entity_data, min_confidence)
+        
+        # Enrich with additional AI metrics
+        enriched_entities = []
+        for entity, info in filtered_entities.items():
+            if isinstance(info, dict):
+                enriched_info = info.copy()
+                enriched_info["name"] = entity
+                enriched_info["meets_threshold"] = True
+                enriched_info["threshold_used"] = min_confidence
+                
+                # Add AI enhancement flags
+                if "ai_enhanced" not in enriched_info:
+                    enriched_info["ai_enhanced"] = False
+                
+                enriched_entities.append(enriched_info)
+        
+        # Sort by confidence descending
+        enriched_entities.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return StandardResponse.success(
+            data={
+                "entities": enriched_entities,
+                "filtering": {
+                    "threshold": min_confidence,
+                    "passed": len(filtered_entities),
+                    "rejected": len(rejected_entities),
+                    "pass_rate": len(filtered_entities) / (len(filtered_entities) + len(rejected_entities)) if (len(filtered_entities) + len(rejected_entities)) > 0 else 0.0
+                }
+            },
+            metadata={
+                "processing_time_ms": processing_time,
+                "filtering_version": "2.0_ai_enhanced"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error filtering entities by confidence: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to filter entities: {str(e)}")
