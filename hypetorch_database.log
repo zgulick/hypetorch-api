@@ -214,3 +214,32 @@ LINE 4:         FROM current_metrics cm
 2025-09-03 16:15:48,810 - scheduled_maintenance - INFO - - Monthly maintenance: 2:00 AM on the 1st of each month
 2025-09-03 16:15:48,811 - scheduled_maintenance - INFO - Scheduler started
 2025-09-03 16:15:48,811 - db_pool - WARNING - Got a closed PostgreSQL connection. Replacing...
+2025-09-03 16:59:34,959 - db_pool - INFO - PostgreSQL connection pool created with 2-10 connections
+2025-09-03 16:59:34,961 - db_pool - INFO - Connection pool initialized. PostgreSQL available: True
+2025-09-03 16:59:34,961 - db_pool - INFO - Connection monitor thread started
+2025-09-03 16:59:42,654 - db_pool - WARNING - Got a closed PostgreSQL connection. Replacing...
+2025-09-03 16:59:44,364 - migrations - INFO - Migrations table already exists
+2025-09-03 16:59:44,365 - migrations - INFO - Migrations table already exists
+2025-09-03 16:59:46,092 - migrations - INFO - Found 6 previously applied migrations
+2025-09-03 16:59:46,092 - migrations - INFO - Found 6 previously applied migrations
+2025-09-03 16:59:46,092 - migrations - INFO - Database type: PostgreSQL
+2025-09-03 16:59:46,093 - migrations - INFO - Database type: PostgreSQL
+2025-09-03 16:59:46,093 - migrations - INFO - Migration 1.0.0 already applied, skipping
+2025-09-03 16:59:46,093 - migrations - INFO - Migration 1.0.0 already applied, skipping
+2025-09-03 16:59:46,093 - migrations - INFO - Migration 1.0.1 already applied, skipping
+2025-09-03 16:59:46,093 - migrations - INFO - Migration 1.0.1 already applied, skipping
+2025-09-03 16:59:46,093 - migrations - INFO - Migration 1.0.2 already applied, skipping
+2025-09-03 16:59:46,093 - migrations - INFO - Migration 1.0.2 already applied, skipping
+2025-09-03 16:59:46,093 - migrations - INFO - Migration 1.0.3 already applied, skipping
+2025-09-03 16:59:46,094 - migrations - INFO - Migration 1.0.3 already applied, skipping
+2025-09-03 16:59:46,094 - migrations - INFO - Migration 1.0.4 already applied, skipping
+2025-09-03 16:59:46,094 - migrations - INFO - Migration 1.0.4 already applied, skipping
+2025-09-03 16:59:46,094 - migrations - INFO - Migration 1.0.5 already applied, skipping
+2025-09-03 16:59:46,094 - migrations - INFO - Migration 1.0.5 already applied, skipping
+2025-09-03 16:59:46,094 - migrations - INFO - All migrations completed successfully
+2025-09-03 16:59:46,094 - migrations - INFO - All migrations completed successfully
+2025-09-03 17:00:14,211 - scheduled_maintenance - INFO - Scheduled maintenance tasks:
+2025-09-03 17:00:14,211 - scheduled_maintenance - INFO - - Daily maintenance: 2:00 AM
+2025-09-03 17:00:14,211 - scheduled_maintenance - INFO - - Monthly maintenance: 2:00 AM on the 1st of each month
+2025-09-03 17:00:14,212 - scheduled_maintenance - INFO - Scheduler started
+2025-09-03 17:00:14,212 - db_pool - WARNING - Got a closed PostgreSQL connection. Replacing...
