@@ -243,3 +243,25 @@ LINE 4:         FROM current_metrics cm
 2025-09-03 17:00:14,211 - scheduled_maintenance - INFO - - Monthly maintenance: 2:00 AM on the 1st of each month
 2025-09-03 17:00:14,212 - scheduled_maintenance - INFO - Scheduler started
 2025-09-03 17:00:14,212 - db_pool - WARNING - Got a closed PostgreSQL connection. Replacing...
+2025-09-07 07:49:21,533 - database - INFO - Initializing database...
+2025-09-07 07:49:23,586 - database - INFO - Database initialized successfully
+2025-09-07 07:49:24,046 - database - INFO - Executing query in schema 'development' with params: []
+2025-09-07 07:49:24,202 - database - INFO - Query returned 45 rows
+2025-09-07 07:49:24,507 - database - INFO - Executing query in schema 'development' with params: ('Caitlin Clark',)
+2025-09-07 07:49:24,660 - database - INFO - Query returned 1 rows
+2025-09-07 07:49:24,969 - database - INFO - Executing query in schema 'development' with params: []
+2025-09-07 07:49:25,261 - database - INFO - Query returned 320 rows
+2025-09-07 07:49:25,576 - database - INFO - Executing query in schema 'development' with params: []
+2025-09-07 07:49:25,730 - database - INFO - Query returned 45 rows
+2025-09-07 07:49:26,038 - database - INFO - Executing query in schema 'development' with params: []
+2025-09-07 07:49:26,214 - database - INFO - Query returned 320 rows
+2025-09-07 07:49:26,526 - database - INFO - Executing query in schema 'development' with params: (3,)
+2025-09-07 07:49:26,679 - database - INFO - Query returned 1 rows
+2025-09-07 07:49:26,985 - database - INFO - Executing query in schema 'development' with params: ('Sports',)
+2025-09-07 07:49:27,142 - database - INFO - Query returned 41 rows
+2025-09-07 07:49:27,451 - database - INFO - Executing query in schema 'development' with params: ('%Caitlin%', '%Caitlin%', '%Caitlin%', 'Caitlin', 'Caitlin%', 10)
+2025-09-07 07:49:27,610 - database - INFO - Query returned 1 rows
+2025-09-07 07:49:27,916 - database - INFO - Executing query in schema 'development' with params: [10]
+2025-09-07 07:49:28,071 - database - INFO - Query returned 10 rows
+2025-09-07 07:49:28,380 - database - INFO - Executing query in schema 'development' with params: (3, 5)
+2025-09-07 07:49:28,533 - database - INFO - Query returned 5 rows

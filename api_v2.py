@@ -790,19 +790,27 @@ def get_dashboard_widgets_v2(
                 WHERE time_period LIKE 'week_2025_%'
                 ORDER BY time_period DESC
                 LIMIT 1
+            ),
+            deduplicated_metrics AS (
+                SELECT 
+                    e.name as entity_name,
+                    hm.value as rodmn_score,
+                    hm.time_period,
+                    ROW_NUMBER() OVER (PARTITION BY e.id ORDER BY hm.timestamp DESC) as row_num
+                FROM historical_metrics hm
+                JOIN entities e ON hm.entity_id = e.id
+                JOIN latest_period lp ON hm.time_period = lp.time_period
+                WHERE hm.metric_type = 'rodmn_score'
+                    AND e.category = 'Sports'
+                    AND hm.value IS NOT NULL
             )
             SELECT 
-                e.name as entity_name,
-                hm.value as rodmn_score,
-                hm.timestamp,
-                hm.time_period
-            FROM historical_metrics hm
-            JOIN entities e ON hm.entity_id = e.id
-            JOIN latest_period lp ON hm.time_period = lp.time_period
-            WHERE hm.metric_type = 'rodmn_score'
-                AND e.category = 'Sports'
-                AND hm.value IS NOT NULL
-            ORDER BY hm.value DESC
+                entity_name,
+                rodmn_score,
+                time_period
+            FROM deduplicated_metrics
+            WHERE row_num = 1
+            ORDER BY rodmn_score DESC
             LIMIT 5
         """
         try:
