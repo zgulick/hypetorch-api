@@ -492,6 +492,29 @@ def get_entities_by_category(category, subcategory=None):
         logger.error(f"Error getting entities by category: {e}")
         return []
 
+def get_entities_by_subcategory(subcategory):
+    """
+    Get entities filtered by subcategory only.
+
+    Args:
+        subcategory: Subcategory to filter by
+
+    Returns:
+        List of entity dictionaries
+    """
+    try:
+        query = """
+            SELECT id, name, type, category, subcategory
+            FROM entities
+            WHERE subcategory = %s
+            ORDER BY name
+        """
+        result = execute_query(query, (subcategory,))
+        return result
+    except Exception as e:
+        logger.error(f"Error getting entities by subcategory: {e}")
+        return []
+
 def search_entities(search_term, limit=10):
     """
     Search for entities by name, category, or subcategory.

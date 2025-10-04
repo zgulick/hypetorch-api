@@ -11,10 +11,11 @@ from database import (
     get_entity_by_id,
     get_current_metrics,
     get_historical_metrics,
-    get_entity_current_metrics, 
+    get_entity_current_metrics,
     load_latest_data,
     get_hype_score_history,
     get_entities_by_category,
+    get_entities_by_subcategory,
     get_metric_history,
     get_latest_hype_scores,
     search_entities_by_category,
@@ -126,6 +127,8 @@ def get_all_entities(
         # Get entities based on filters
         if category:
             entities = get_entities_by_category(category, subcategory)
+        elif subcategory:
+            entities = get_entities_by_subcategory(subcategory)
         else:
             entities = get_entities()
         
