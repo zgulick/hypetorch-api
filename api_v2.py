@@ -269,6 +269,8 @@ def get_entities_with_metrics(
     subcategory: Optional[str] = Query(None, description="Filter by subcategory (e.g., NBA, Unrivaled)"),
     category: Optional[str] = Query(None, description="Filter by category (e.g., Sports, Crypto)"),
     limit: Optional[int] = Query(100, ge=1, le=500, description="Maximum number of results"),
+    sort_by: Optional[str] = Query("hype_score", description="Metric to sort by (hype_score, rodmn_score, mentions, talk_time, etc.)"),
+    sort_order: Optional[str] = Query("desc", description="Sort direction (asc or desc)"),
     key_info: dict = Depends(get_api_key)
 ):
     """
@@ -282,6 +284,8 @@ def get_entities_with_metrics(
         subcategory: Filter to specific vertical (e.g., "NBA", "Unrivaled", "Bitcoin")
         category: Filter to category (e.g., "Sports", "Crypto")
         limit: Max number of entities to return (default 100, max 500)
+        sort_by: Metric to sort by (default "hype_score")
+        sort_order: Sort direction "asc" or "desc" (default "desc")
 
     Returns:
         StandardResponse with entities array, each containing:
@@ -291,12 +295,20 @@ def get_entities_with_metrics(
         - metrics: Object with all current metric values
 
     Example:
-        GET /api/v2/entities/metrics?subcategory=NBA&limit=10
-        Returns top 10 NBA entities with their current metrics
+        GET /api/v2/entities/metrics?subcategory=NBA&limit=10&sort_by=hype_score&sort_order=desc
+        Returns top 10 NBA entities sorted by highest HYPE scores
     """
     start_time = time.time()
 
     try:
+        # Validate sort parameters
+        valid_sort_fields = ["hype_score", "rodmn_score", "mentions", "talk_time", "sentiment_score", "wikipedia_views", "reddit_mentions", "google_trends"]
+        if sort_by not in valid_sort_fields:
+            sort_by = "hype_score"  # Default fallback
+
+        if sort_order.lower() not in ["asc", "desc"]:
+            sort_order = "desc"  # Default fallback
+
         # Get entities based on filters (same logic as /entities endpoint)
         if category:
             entities = get_entities_by_category(category, subcategory)
@@ -305,11 +317,7 @@ def get_entities_with_metrics(
         else:
             entities = get_entities()
 
-        # Apply limit if specified
-        if limit and len(entities) > limit:
-            entities = entities[:limit]
-
-        # Handle empty results
+        # Handle empty results early
         if not entities:
             return StandardResponse.success(
                 data={"entities": []},
@@ -317,7 +325,9 @@ def get_entities_with_metrics(
                     "count": 0,
                     "filters": {
                         "category": category,
-                        "subcategory": subcategory
+                        "subcategory": subcategory,
+                        "sort_by": sort_by,
+                        "sort_order": sort_order
                     }
                 }
             )
@@ -333,12 +343,15 @@ def get_entities_with_metrics(
                 metrics_by_entity[entity_id] = {}
             metrics_by_entity[entity_id][metric["metric_type"]] = metric["value"]
 
-        # Format entities with metrics for response
+        # Format entities with metrics for sorting
         formatted_entities = []
         for entity in entities:
             entity_metrics = metrics_by_entity.get(entity["id"], {})
 
-            formatted_entities.append({
+            # Map mentions field correctly for sorting
+            sort_metric_value = entity_metrics.get(sort_by if sort_by != "mentions" else "mentions", 0) or 0
+
+            formatted_entity = {
                 "name": entity.get('name'),
                 "category": entity.get('category'),
                 "subcategory": entity.get('subcategory'),
@@ -351,8 +364,22 @@ def get_entities_with_metrics(
                     "wikipedia_views": entity_metrics.get("wikipedia_views"),
                     "reddit_mentions": entity_metrics.get("reddit_mentions"),
                     "google_trends": entity_metrics.get("google_trends")
-                }
-            })
+                },
+                "_sort_value": sort_metric_value  # Temporary field for sorting
+            }
+            formatted_entities.append(formatted_entity)
+
+        # Sort entities by the specified metric
+        reverse_sort = sort_order.lower() == "desc"
+        formatted_entities.sort(key=lambda x: x["_sort_value"], reverse=reverse_sort)
+
+        # Apply limit after sorting
+        if limit and len(formatted_entities) > limit:
+            formatted_entities = formatted_entities[:limit]
+
+        # Remove the temporary sort field
+        for entity in formatted_entities:
+            del entity["_sort_value"]
 
         processing_time = (time.time() - start_time) * 1000
 
@@ -363,7 +390,10 @@ def get_entities_with_metrics(
                 "processing_time_ms": round(processing_time, 2),
                 "filters": {
                     "category": category,
-                    "subcategory": subcategory
+                    "subcategory": subcategory,
+                    "sort_by": sort_by,
+                    "sort_order": sort_order,
+                    "limit": limit
                 }
             }
         )
