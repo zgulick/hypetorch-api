@@ -264,6 +264,120 @@ def get_available_verticals(
             details=str(e)
         )
 
+@v2_router.get("/entities/metrics")
+def get_entities_with_metrics(
+    subcategory: Optional[str] = Query(None, description="Filter by subcategory (e.g., NBA, Unrivaled)"),
+    category: Optional[str] = Query(None, description="Filter by category (e.g., Sports, Crypto)"),
+    limit: Optional[int] = Query(100, ge=1, le=500, description="Maximum number of results"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get entities with their current metrics (JORDN, RODMN, etc.).
+    Supports filtering by category/subcategory.
+
+    This endpoint is used by frontend components to display entity data
+    with scores, supporting dynamic filtering by vertical.
+
+    Query Parameters:
+        subcategory: Filter to specific vertical (e.g., "NBA", "Unrivaled", "Bitcoin")
+        category: Filter to category (e.g., "Sports", "Crypto")
+        limit: Max number of entities to return (default 100, max 500)
+
+    Returns:
+        StandardResponse with entities array, each containing:
+        - name: Entity name
+        - category: Parent category
+        - subcategory: Vertical identifier
+        - metrics: Object with all current metric values
+
+    Example:
+        GET /api/v2/entities/metrics?subcategory=NBA&limit=10
+        Returns top 10 NBA entities with their current metrics
+    """
+    start_time = time.time()
+
+    try:
+        # Get entities based on filters (same logic as /entities endpoint)
+        if category:
+            entities = get_entities_by_category(category, subcategory)
+        elif subcategory:
+            entities = get_entities_by_subcategory(subcategory)
+        else:
+            entities = get_entities()
+
+        # Apply limit if specified
+        if limit and len(entities) > limit:
+            entities = entities[:limit]
+
+        # Handle empty results
+        if not entities:
+            return StandardResponse.success(
+                data={"entities": []},
+                metadata={
+                    "count": 0,
+                    "filters": {
+                        "category": category,
+                        "subcategory": subcategory
+                    }
+                }
+            )
+
+        # Get all current metrics in one query
+        all_metrics = get_current_metrics()
+
+        # Group metrics by entity_id
+        metrics_by_entity = {}
+        for metric in all_metrics:
+            entity_id = metric["entity_id"]
+            if entity_id not in metrics_by_entity:
+                metrics_by_entity[entity_id] = {}
+            metrics_by_entity[entity_id][metric["metric_type"]] = metric["value"]
+
+        # Format entities with metrics for response
+        formatted_entities = []
+        for entity in entities:
+            entity_metrics = metrics_by_entity.get(entity["id"], {})
+
+            formatted_entities.append({
+                "name": entity.get('name'),
+                "category": entity.get('category'),
+                "subcategory": entity.get('subcategory'),
+                "metrics": {
+                    "hype_score": entity_metrics.get("hype_score"),
+                    "rodmn_score": entity_metrics.get("rodmn_score"),
+                    "mention_count": entity_metrics.get("mentions"),
+                    "talk_time": entity_metrics.get("talk_time"),
+                    "sentiment_score": entity_metrics.get("sentiment_score"),
+                    "wikipedia_views": entity_metrics.get("wikipedia_views"),
+                    "reddit_mentions": entity_metrics.get("reddit_mentions"),
+                    "google_trends": entity_metrics.get("google_trends")
+                }
+            })
+
+        processing_time = (time.time() - start_time) * 1000
+
+        return StandardResponse.success(
+            data={"entities": formatted_entities},
+            metadata={
+                "count": len(formatted_entities),
+                "processing_time_ms": round(processing_time, 2),
+                "filters": {
+                    "category": category,
+                    "subcategory": subcategory
+                }
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error retrieving entity metrics: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return StandardResponse.error(
+            message="Failed to retrieve entity metrics",
+            status_code=500,
+            details=str(e)
+        )
+
 # Analytics endpoints
 @v2_router.get("/analytics/dashboard")
 def get_dashboard_data(key_info: dict = Depends(get_api_key)):
