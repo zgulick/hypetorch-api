@@ -351,9 +351,14 @@ def get_entities_with_metrics(
             # Map mentions field correctly for sorting
             metric_key = "mentions" if sort_by == "mentions" else sort_by
             sort_metric_value = entity_metrics.get(metric_key, 0)
-            # Handle None values by converting to 0
+            # Handle None values by converting to 0, and ensure it's a number
             if sort_metric_value is None:
                 sort_metric_value = 0
+            else:
+                try:
+                    sort_metric_value = float(sort_metric_value)
+                except (ValueError, TypeError):
+                    sort_metric_value = 0
 
             formatted_entity = {
                 "name": entity.get('name'),
