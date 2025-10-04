@@ -349,7 +349,11 @@ def get_entities_with_metrics(
             entity_metrics = metrics_by_entity.get(entity["id"], {})
 
             # Map mentions field correctly for sorting
-            sort_metric_value = entity_metrics.get(sort_by if sort_by != "mentions" else "mentions", 0) or 0
+            metric_key = "mentions" if sort_by == "mentions" else sort_by
+            sort_metric_value = entity_metrics.get(metric_key, 0)
+            # Handle None values by converting to 0
+            if sort_metric_value is None:
+                sort_metric_value = 0
 
             formatted_entity = {
                 "name": entity.get('name'),
@@ -371,7 +375,18 @@ def get_entities_with_metrics(
 
         # Sort entities by the specified metric
         reverse_sort = sort_order.lower() == "desc"
+
+        # Debug logging for sorting
+        logger.info(f"Sorting {len(formatted_entities)} entities by {sort_by} in {sort_order} order")
+        for entity in formatted_entities[:5]:  # Log first 5 for debugging
+            logger.info(f"Entity: {entity['name']}, Sort value: {entity['_sort_value']}")
+
         formatted_entities.sort(key=lambda x: x["_sort_value"], reverse=reverse_sort)
+
+        # Log after sorting
+        logger.info("After sorting:")
+        for entity in formatted_entities[:5]:  # Log first 5 after sorting
+            logger.info(f"Entity: {entity['name']}, Sort value: {entity['_sort_value']}")
 
         # Apply limit after sorting
         if limit and len(formatted_entities) > limit:
