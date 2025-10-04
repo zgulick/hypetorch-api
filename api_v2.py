@@ -179,6 +179,91 @@ def get_all_entities(
             details=str(e)
         )
 
+@v2_router.get("/verticals")
+def get_available_verticals(
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get list of available verticals (subcategories) with entity counts.
+    Used by frontend to dynamically populate vertical selector.
+
+    This endpoint queries the entities table to find all unique subcategories
+    and counts how many entities belong to each one.
+
+    Returns:
+        StandardResponse with verticals list including:
+        - key: The subcategory identifier (e.g., "NBA", "Unrivaled")
+        - label: Display label (same as key for now)
+        - category: Parent category (e.g., "Sports", "Crypto")
+        - entity_count: Number of entities in this subcategory
+
+    Example Response:
+        {
+            "success": true,
+            "data": {
+                "verticals": [
+                    {
+                        "key": "Unrivaled",
+                        "label": "Unrivaled",
+                        "category": "Sports",
+                        "entity_count": 37
+                    }
+                ],
+                "total_verticals": 1
+            }
+        }
+    """
+    try:
+        # Query to get all subcategories with entity counts
+        query = """
+            SELECT
+                category,
+                subcategory,
+                COUNT(*) as entity_count
+            FROM entities
+            WHERE subcategory IS NOT NULL
+            GROUP BY category, subcategory
+            ORDER BY category, subcategory
+        """
+
+        results = execute_query(query)
+
+        # Handle case where no entities exist
+        if not results:
+            return StandardResponse.success(
+                data={
+                    "verticals": [],
+                    "total_verticals": 0
+                }
+            )
+
+        # Format results into vertical structure
+        verticals = []
+        for row in results:
+            verticals.append({
+                "key": row['subcategory'],
+                "label": row['subcategory'],
+                "category": row['category'],
+                "entity_count": row['entity_count']
+            })
+
+        return StandardResponse.success(
+            data={
+                "verticals": verticals,
+                "total_verticals": len(verticals)
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error retrieving verticals: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return StandardResponse.error(
+            message="Failed to retrieve verticals",
+            status_code=500,
+            details=str(e)
+        )
+
 # Analytics endpoints
 @v2_router.get("/analytics/dashboard")
 def get_dashboard_data(key_info: dict = Depends(get_api_key)):
