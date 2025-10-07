@@ -644,23 +644,23 @@ def create_entity(entity_data, schema_name=None):
         subcategory = entity_data.get("subcategory", "Unrivaled")
         metadata = json.dumps(entity_data.get("metadata", {}))
         
-        # Check if entity already exists
-        existing = get_entity_by_name(name, schema_name=schema_name)
-        if existing:
-            return False, f"Entity '{name}' already exists"
-        
-        # Insert new entity
+        # Insert or update entity with UPSERT behavior
         query = """
             INSERT INTO entities (name, type, category, subcategory, metadata)
             VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (name) DO UPDATE SET
+                type = EXCLUDED.type,
+                category = EXCLUDED.category,
+                subcategory = EXCLUDED.subcategory,
+                metadata = EXCLUDED.metadata
             RETURNING id
         """
         result = execute_query(query, (name, entity_type, category, subcategory, metadata), fetch=True, schema_name=schema_name)
         
         if result:
-            return True, f"Entity '{name}' created successfully"
+            return True, f"Entity '{name}' created or updated successfully"
         else:
-            return False, "Failed to create entity"
+            return False, "Failed to create or update entity"
     except Exception as e:
         logger.error(f"Error creating entity: {e}")
         return False, str(e)

@@ -11,15 +11,56 @@ from db import get_connection, execute_query
 def store_hype_data(data, time_period, date_range=None):
     """
     Store HYPE scores and component metrics in the database.
-    
+
     Args:
         data (dict): Dictionary containing HYPE scores and component metrics
         time_period (str): Time period for this data (e.g., "last_7_days")
         date_range (dict, optional): Dictionary with 'start' and 'end' date strings
-    
+
     Returns:
         bool: Success status
     """
+
+    def get_entity_category_info(entity_name):
+        """Get category and subcategory for an entity from entities.json"""
+        try:
+            # Look for entities.json in the parent directory
+            entities_file = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'entities.json'))
+            if os.path.exists(entities_file):
+                with open(entities_file, 'r') as f:
+                    entities_config = json.load(f)
+
+                    # Search through all categories and subcategories
+                    for category_name, category_data in entities_config.items():
+                        if isinstance(category_data, dict):
+                            for subcategory_name, entities_list in category_data.items():
+                                if isinstance(entities_list, list):
+                                    for entity_info in entities_list:
+                                        if entity_info.get('name') == entity_name:
+                                            return category_name, subcategory_name, entity_info.get('type', 'person')
+                                        # Check aliases too
+                                        for alias in entity_info.get('aliases', []):
+                                            if alias == entity_name:
+                                                return category_name, subcategory_name, entity_info.get('type', 'person')
+
+            # Default fallback - try to determine from entity name patterns
+            entity_upper = entity_name.upper()
+            if entity_upper in ['BTC', 'BITCOIN', 'ETH', 'ETHEREUM', 'SOL', 'SOLANA', 'DOGE', 'DOGECOIN']:
+                return "Crypto", "Altcoins", "non-person"
+            elif entity_upper in ['SHIB', 'PEPE', 'WIF', 'BONK', 'FLOKI', 'TRUMP', 'MELANIA', 'FARTCOIN', 'HAWK']:
+                return "Crypto", "Memecoins", "non-person"
+            elif entity_name in ['NBA', 'WNBA']:
+                return "Sports", entity_name, "non-person"
+            else:
+                # Check if it's likely a person name (title case, multiple words)
+                if entity_name.istitle() and ' ' in entity_name:
+                    return "Sports", "NBA", "person"
+                else:
+                    return "Sports", "Unrivaled", "person"
+
+        except Exception as e:
+            print(f"⚠️ Error determining entity category for {entity_name}: {e}")
+            return "Sports", "Unrivaled", "person"
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -90,16 +131,18 @@ def store_hype_data(data, time_period, date_range=None):
             if result:
                 entity_id = result[0]
             else:
-                # Determine entity type (person or non-person)
-                entity_type = "non-person" if entity_name.upper() == entity_name else "person"
-                
+                # Get proper category, subcategory, and type for this entity
+                category, subcategory, entity_type = get_entity_category_info(entity_name)
+
+                print(f"📋 Creating entity: {entity_name} -> {category}/{subcategory} ({entity_type})")
+
                 cursor.execute(
                     """
                     INSERT INTO entities (name, type, category, subcategory)
                     VALUES (%s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (entity_name, entity_type, "Sports", "Unrivaled")  # Default category/subcategory
+                    (entity_name, entity_type, category, subcategory)
                 )
                 entity_id = cursor.fetchone()[0]
             
