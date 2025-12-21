@@ -155,7 +155,11 @@ def get_all_entities(
                     "mentions": entity_metrics.get("mentions"),
                     "wikipedia_views": entity_metrics.get("wikipedia_views"),
                     "reddit_mentions": entity_metrics.get("reddit_mentions"),
-                    "google_trends": entity_metrics.get("google_trends")
+                    "google_trends": entity_metrics.get("google_trends"),
+                    "pipn_score": entity_metrics.get("pipn_score"),
+                    "reach_score": entity_metrics.get("reach_score"),
+                    "jordn_percentile": entity_metrics.get("jordn_percentile"),
+                    "reach_percentile": entity_metrics.get("reach_percentile")
                 }
         
         processing_time = (time.time() - start_time) * 1000
@@ -302,7 +306,7 @@ def get_entities_with_metrics(
 
     try:
         # Validate sort parameters
-        valid_sort_fields = ["hype_score", "rodmn_score", "mentions", "talk_time", "sentiment_score", "wikipedia_views", "reddit_mentions", "google_trends"]
+        valid_sort_fields = ["hype_score", "rodmn_score", "mentions", "talk_time", "sentiment_score", "wikipedia_views", "reddit_mentions", "google_trends", "pipn_score"]
         if sort_by not in valid_sort_fields:
             sort_by = "hype_score"  # Default fallback
 
@@ -372,7 +376,11 @@ def get_entities_with_metrics(
                     "sentiment_score": entity_metrics.get("sentiment_score"),
                     "wikipedia_views": entity_metrics.get("wikipedia_views"),
                     "reddit_mentions": entity_metrics.get("reddit_mentions"),
-                    "google_trends": entity_metrics.get("google_trends")
+                    "google_trends": entity_metrics.get("google_trends"),
+                    "pipn_score": entity_metrics.get("pipn_score"),
+                    "reach_score": entity_metrics.get("reach_score"),
+                    "jordn_percentile": entity_metrics.get("jordn_percentile"),
+                    "reach_percentile": entity_metrics.get("reach_percentile")
                 },
                 "_sort_value": sort_metric_value  # Temporary field for sorting
             }
@@ -709,6 +717,8 @@ def compare_entities(
                     value = latest_data.get("reddit_mentions", {}).get(entity_name, 0)
                 elif metric == "google_trends":
                     value = latest_data.get("google_trends", {}).get(entity_name, 0)
+                elif metric == "pipn_score":
+                    value = latest_data.get("pipn_scores", {}).get(entity_name, 0)
                 else:
                     value = 0
                     

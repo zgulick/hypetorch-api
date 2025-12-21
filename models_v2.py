@@ -22,6 +22,10 @@ class EntityMetrics(BaseModel):
     wikipedia_views: Optional[int] = None
     reddit_mentions: Optional[int] = None
     google_trends: Optional[int] = None
+    pipn_score: Optional[float] = None
+    reach_score: Optional[float] = None
+    jordn_percentile: Optional[float] = None
+    reach_percentile: Optional[float] = None
 
 class EntityData(BaseModel):
     """Complete entity data."""

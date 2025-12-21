@@ -322,12 +322,12 @@ MIGRATIONS = [
                 -- Prevent duplicate relationships
                 UNIQUE(source_entity_id, target_entity_id, relationship_type)
             );
-        
+
             -- Create indexes for efficient lookups
             CREATE INDEX IF NOT EXISTS idx_relationships_source ON entity_relationships(source_entity_id);
             CREATE INDEX IF NOT EXISTS idx_relationships_target ON entity_relationships(target_entity_id);
             CREATE INDEX IF NOT EXISTS idx_relationships_type ON entity_relationships(relationship_type);
-        
+
             -- Create trigger for updated_at
             CREATE OR REPLACE FUNCTION update_entity_relationship_timestamp()
             RETURNS TRIGGER AS $$
@@ -336,7 +336,7 @@ MIGRATIONS = [
                 RETURN NEW;
             END;
             $$ LANGUAGE plpgsql;
-        
+
             DROP TRIGGER IF EXISTS update_entity_relationship_timestamp ON entity_relationships;
             CREATE TRIGGER update_entity_relationship_timestamp
             BEFORE UPDATE ON entity_relationships
@@ -358,12 +358,12 @@ MIGRATIONS = [
                 FOREIGN KEY (target_entity_id) REFERENCES entities(id),
                 UNIQUE(source_entity_id, target_entity_id, relationship_type)
             );
-        
+
             -- Create indexes for SQLite
             CREATE INDEX IF NOT EXISTS idx_relationships_source ON entity_relationships(source_entity_id);
             CREATE INDEX IF NOT EXISTS idx_relationships_target ON entity_relationships(target_entity_id);
             CREATE INDEX IF NOT EXISTS idx_relationships_type ON entity_relationships(relationship_type);
-        
+
             -- Create trigger for updated_at in SQLite
             CREATE TRIGGER IF NOT EXISTS update_entity_relationship_timestamp
             AFTER UPDATE ON entity_relationships
@@ -371,6 +371,143 @@ MIGRATIONS = [
             BEGIN
                 UPDATE entity_relationships SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
             END;
+        """
+    },
+    {
+        "version": "1.1.0",
+        "description": "Add PIPN columns to historical_metrics",
+        "sql": """
+            -- Add PIPN score and supporting metrics to historical_metrics
+            -- Using explicit schema qualification
+            ALTER TABLE development.historical_metrics ADD COLUMN IF NOT EXISTS pipn_score DECIMAL(6,2);
+            ALTER TABLE development.historical_metrics ADD COLUMN IF NOT EXISTS reach_score DECIMAL(10,4);
+            ALTER TABLE development.historical_metrics ADD COLUMN IF NOT EXISTS reach_percentile DECIMAL(5,2);
+            ALTER TABLE development.historical_metrics ADD COLUMN IF NOT EXISTS jordn_percentile DECIMAL(5,2);
+            ALTER TABLE development.historical_metrics ADD COLUMN IF NOT EXISTS social_data_quality VARCHAR(20);
+
+            -- Add indexes for PIPN queries
+            CREATE INDEX IF NOT EXISTS idx_historical_metrics_pipn
+            ON development.historical_metrics(entity_id, timestamp)
+            WHERE pipn_score IS NOT NULL;
+
+            CREATE INDEX IF NOT EXISTS idx_historical_metrics_social_quality
+            ON development.historical_metrics(social_data_quality)
+            WHERE social_data_quality IS NOT NULL;
+        """,
+        "sqlite_sql": """
+            -- SQLite doesn't support DO blocks, handled in Python code
+            -- Columns will be added via Python check
+        """
+    },
+    {
+        "version": "1.1.1",
+        "description": "Create entity_social_reach table",
+        "sql": """
+            -- Create table for storing social media follower data
+            CREATE TABLE IF NOT EXISTS entity_social_reach (
+                id SERIAL PRIMARY KEY,
+                entity_name VARCHAR(255) NOT NULL,
+                instagram_handle VARCHAR(255),
+                instagram_followers INTEGER,
+                tiktok_handle VARCHAR(255),
+                tiktok_followers INTEGER,
+                twitter_handle VARCHAR(255),
+                twitter_followers INTEGER,
+                reach_score DECIMAL(10,4),
+                social_data_quality VARCHAR(20) CHECK (social_data_quality IN ('complete', 'partial', 'none')),
+                collected_date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                -- Prevent duplicate entries for same entity on same date
+                UNIQUE(entity_name, collected_date)
+            );
+
+            -- Indexes for efficient lookups
+            CREATE INDEX IF NOT EXISTS idx_social_reach_entity
+            ON entity_social_reach(entity_name);
+
+            CREATE INDEX IF NOT EXISTS idx_social_reach_date
+            ON entity_social_reach(collected_date DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_social_reach_quality
+            ON entity_social_reach(social_data_quality);
+        """,
+        "sqlite_sql": """
+            -- Create table for SQLite
+            CREATE TABLE IF NOT EXISTS entity_social_reach (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_name VARCHAR(255) NOT NULL,
+                instagram_handle VARCHAR(255),
+                instagram_followers INTEGER,
+                tiktok_handle VARCHAR(255),
+                tiktok_followers INTEGER,
+                twitter_handle VARCHAR(255),
+                twitter_followers INTEGER,
+                reach_score DECIMAL(10,4),
+                social_data_quality VARCHAR(20),
+                collected_date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                UNIQUE(entity_name, collected_date)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_social_reach_entity
+            ON entity_social_reach(entity_name);
+
+            CREATE INDEX IF NOT EXISTS idx_social_reach_date
+            ON entity_social_reach(collected_date);
+
+            CREATE INDEX IF NOT EXISTS idx_social_reach_quality
+            ON entity_social_reach(social_data_quality);
+        """
+    },
+    {
+        "version": "1.1.2",
+        "description": "Create apify_api_calls table for cost tracking",
+        "sql": """
+            -- Create table for tracking Apify API usage and costs
+            CREATE TABLE IF NOT EXISTS apify_api_calls (
+                id SERIAL PRIMARY KEY,
+                entity_name VARCHAR(255),
+                platform VARCHAR(50),
+                actor_id VARCHAR(255),
+                followers_found INTEGER,
+                credits_used DECIMAL(10,4),
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Index for querying by entity and platform
+            CREATE INDEX IF NOT EXISTS idx_apify_calls_entity
+            ON apify_api_calls(entity_name);
+
+            CREATE INDEX IF NOT EXISTS idx_apify_calls_platform
+            ON apify_api_calls(platform);
+
+            CREATE INDEX IF NOT EXISTS idx_apify_calls_timestamp
+            ON apify_api_calls(timestamp DESC);
+        """,
+        "sqlite_sql": """
+            -- Create table for SQLite
+            CREATE TABLE IF NOT EXISTS apify_api_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_name VARCHAR(255),
+                platform VARCHAR(50),
+                actor_id VARCHAR(255),
+                followers_found INTEGER,
+                credits_used DECIMAL(10,4),
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_apify_calls_entity
+            ON apify_api_calls(entity_name);
+
+            CREATE INDEX IF NOT EXISTS idx_apify_calls_platform
+            ON apify_api_calls(platform);
+
+            CREATE INDEX IF NOT EXISTS idx_apify_calls_timestamp
+            ON apify_api_calls(timestamp);
         """
     }
 ]
@@ -410,10 +547,15 @@ def run_migrations():
         try:
             with DatabaseConnection() as conn:
                 cursor = conn.cursor()
-                
+
+                # Set search path for PostgreSQL
+                if not using_sqlite:
+                    db_env = os.environ.get("DB_ENVIRONMENT", "development")
+                    cursor.execute(f"SET search_path TO {db_env}")
+
                 # Choose the right SQL based on database type
                 sql = migration["sqlite_sql"] if using_sqlite else migration["sql"]
-                
+
                 if using_sqlite and "sqlite_sql" in migration:
                     # For SQLite, we need special handling for schema changes
                     if version == "1.0.0":
@@ -422,14 +564,14 @@ def run_migrations():
                         columns = [column[1] for column in cursor.fetchall()]
                         if "category" not in columns:
                             cursor.execute("ALTER TABLE entities ADD COLUMN category TEXT DEFAULT 'Sports'")
-                    
+
                     elif version == "1.0.1":
                         # Check if subcategory column exists
                         cursor.execute("PRAGMA table_info(entities)")
                         columns = [column[1] for column in cursor.fetchall()]
                         if "subcategory" not in columns:
                             cursor.execute("ALTER TABLE entities ADD COLUMN subcategory TEXT DEFAULT 'Unrivaled'")
-                    
+
                     elif version == "1.0.2":
                         # Check if domain column exists
                         cursor.execute("PRAGMA table_info(entities)")
@@ -439,7 +581,7 @@ def run_migrations():
                             # Update values
                             cursor.execute("UPDATE entities SET domain = 'Sports' WHERE category = 'Sports'")
                             cursor.execute("UPDATE entities SET domain = 'Crypto' WHERE category = 'Crypto'")
-                    
+
                     elif version == "1.0.3":
                         # Check if updated_at and metadata columns exist
                         cursor.execute("PRAGMA table_info(entities)")
@@ -448,7 +590,7 @@ def run_migrations():
                             cursor.execute("ALTER TABLE entities ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
                         if "metadata" not in columns:
                             cursor.execute("ALTER TABLE entities ADD COLUMN metadata TEXT DEFAULT '{}'")
-                            
+
                         # Create trigger for updated_at
                         cursor.execute("""
                             CREATE TRIGGER IF NOT EXISTS update_entities_updated_at
@@ -458,9 +600,28 @@ def run_migrations():
                                 UPDATE entities SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
                             END;
                         """)
-                    
+
                     elif version == "1.0.4":
                         # Create indexes
+                        cursor.execute(sql)
+
+                    elif version == "1.1.0":
+                        # Add PIPN columns to historical_metrics
+                        cursor.execute("PRAGMA table_info(historical_metrics)")
+                        columns = [column[1] for column in cursor.fetchall()]
+                        if "pipn_score" not in columns:
+                            cursor.execute("ALTER TABLE historical_metrics ADD COLUMN pipn_score DECIMAL(6,2)")
+                        if "reach_score" not in columns:
+                            cursor.execute("ALTER TABLE historical_metrics ADD COLUMN reach_score DECIMAL(10,4)")
+                        if "reach_percentile" not in columns:
+                            cursor.execute("ALTER TABLE historical_metrics ADD COLUMN reach_percentile DECIMAL(5,2)")
+                        if "jordn_percentile" not in columns:
+                            cursor.execute("ALTER TABLE historical_metrics ADD COLUMN jordn_percentile DECIMAL(5,2)")
+                        if "social_data_quality" not in columns:
+                            cursor.execute("ALTER TABLE historical_metrics ADD COLUMN social_data_quality VARCHAR(20)")
+
+                    elif version in ["1.1.1", "1.1.2"]:
+                        # Create new tables (entity_social_reach, apify_api_calls)
                         cursor.execute(sql)
                 
                 else:

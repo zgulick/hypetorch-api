@@ -792,7 +792,7 @@ def delete_entity(entity_name):
 def save_metric(entity_id, metric_type, value, time_period=None, is_historical=False, schema_name=None):
     """
     Save a metric value.
-    
+
     Args:
         entity_id: Entity ID
         metric_type: Type of metric (e.g., 'hype_score', 'rodmn_score')
@@ -800,18 +800,27 @@ def save_metric(entity_id, metric_type, value, time_period=None, is_historical=F
         time_period: Optional time period (e.g., 'last_30_days')
         is_historical: Whether to save as historical data
         schema_name: Optional schema to save to
-    
+
     Returns:
         Success boolean
     """
     try:
+        # Skip saving NULL values (common for PIPN with entities that have no social data)
+        if value is None:
+            logger.debug(f"Skipping NULL value for {metric_type} (entity_id: {entity_id})")
+            return True
+
         if is_historical:
             # Save to historical_metrics
+            if metric_type in ['reach_score', 'reach_percentile']:
+                logger.warning(f"🔍 DEBUG save_metric CALLED: entity_id={entity_id}, metric_type={metric_type}, value={value}, time_period={time_period}, schema={schema_name}")
             query = """
                 INSERT INTO historical_metrics (entity_id, metric_type, value, time_period)
                 VALUES (%s, %s, %s, %s)
             """
             execute_query(query, (entity_id, metric_type, value, time_period), fetch=False, schema_name=schema_name)
+            if metric_type in ['reach_score', 'reach_percentile']:
+                logger.warning(f"✅ DEBUG save_metric COMPLETED: {metric_type}")
         else:
             # Save to current_metrics (upsert)
             query = """
@@ -1161,7 +1170,11 @@ def load_latest_data():
             "wikipedia_views": "wikipedia_views",
             "reddit_mentions": "reddit_mentions",
             "google_trends": "google_trends",
-            "google_news_mentions": "google_news_mentions"
+            "google_news_mentions": "google_news_mentions",
+            "pipn_score": "pipn_scores",
+            "reach_score": "reach_scores",
+            "reach_percentile": "reach_percentiles",
+            "jordn_percentile": "jordn_percentiles"
         }
         
         for metric in metrics:
