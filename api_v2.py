@@ -218,16 +218,26 @@ def get_available_verticals(
         }
     """
     try:
-        # Query to get all subcategories with entity counts
+        # Query to get all subcategories with entity counts and metadata
+        # Check BOTH current_metrics and historical_metrics for recent data
         query = """
             SELECT
-                category,
-                subcategory,
-                COUNT(*) as entity_count
-            FROM entities
-            WHERE subcategory IS NOT NULL
-            GROUP BY category, subcategory
-            ORDER BY category, subcategory
+                e.category,
+                e.subcategory,
+                COUNT(DISTINCT e.id) as entity_count,
+                GREATEST(MAX(cm.timestamp), MAX(hm.timestamp)) as last_updated,
+                CASE
+                    WHEN GREATEST(MAX(cm.timestamp), MAX(hm.timestamp)) >= CURRENT_TIMESTAMP - INTERVAL '30 days'
+                    THEN true
+                    ELSE false
+                END as has_recent_data,
+                BOOL_OR(e.type = 'person') as has_person_entities
+            FROM entities e
+            LEFT JOIN current_metrics cm ON e.id = cm.entity_id
+            LEFT JOIN historical_metrics hm ON e.id = hm.entity_id
+            WHERE e.subcategory IS NOT NULL
+            GROUP BY e.category, e.subcategory
+            ORDER BY e.category, e.subcategory
         """
 
         results = execute_query(query)
@@ -244,11 +254,17 @@ def get_available_verticals(
         # Format results into vertical structure
         verticals = []
         for row in results:
+            # Debug logging
+            logger.info(f"Vertical {row['subcategory']}: last_updated={row['last_updated']}, has_recent_data={row['has_recent_data']}")
+
             verticals.append({
                 "key": row['subcategory'],
                 "label": row['subcategory'],
                 "category": row['category'],
-                "entity_count": row['entity_count']
+                "entity_count": row['entity_count'],
+                "has_recent_data": row['has_recent_data'],
+                "last_updated": row['last_updated'].isoformat() if row['last_updated'] else None,
+                "has_person_entities": row['has_person_entities']
             })
 
         return StandardResponse.success(
