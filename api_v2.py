@@ -1347,16 +1347,589 @@ def get_available_time_periods_v2(
             status_code=500
         )
 
+# ===== NEWSLETTER LEADERBOARD ENDPOINTS (V2) =====
+# These endpoints support the weekly newsletter automation
+
+@v2_router.get("/leaderboard/risers")
+def get_top_risers(
+    category: Optional[str] = Query(None, description="Filter by category (e.g., Sports)"),
+    subcategory: Optional[str] = Query(None, description="Filter by subcategory (e.g., NBA, Unrivaled)"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum results to return"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get entities with biggest HYPE score increase week-over-week.
+
+    Returns entities sorted by percent change (highest to lowest).
+    Requires at least 2 weeks of historical data.
+    """
+    start_time = time.time()
+
+    try:
+        # Get 2 most recent time periods
+        periods_query = """
+            SELECT DISTINCT time_period
+            FROM historical_metrics
+            WHERE metric_type = 'hype_score'
+            ORDER BY time_period DESC
+            LIMIT 2
+        """
+        periods = execute_query(periods_query)
+
+        if not periods or len(periods) < 2:
+            raise HTTPException(400, "Need at least 2 weeks of data to calculate risers")
+
+        current_period = periods[0]['time_period']
+        previous_period = periods[1]['time_period']
+
+        # Build filter conditions
+        filter_conditions = ["hm.metric_type = %s"]
+        params = ['hype_score']
+
+        if category:
+            filter_conditions.append("e.category = %s")
+            params.append(category)
+        if subcategory:
+            filter_conditions.append("e.subcategory = %s")
+            params.append(subcategory)
+
+        where_clause = " AND ".join(filter_conditions)
+
+        # Query current week scores
+        current_query = f"""
+            SELECT e.id, e.name, e.subcategory, hm.value as hype_score
+            FROM historical_metrics hm
+            JOIN entities e ON hm.entity_id = e.id
+            WHERE hm.time_period = %s AND {where_clause}
+        """
+        current_data = execute_query(current_query, [current_period] + params)
+
+        # Query previous week scores
+        previous_query = f"""
+            SELECT e.id, hm.value as hype_score
+            FROM historical_metrics hm
+            JOIN entities e ON hm.entity_id = e.id
+            WHERE hm.time_period = %s AND {where_clause}
+        """
+        previous_data = execute_query(previous_query, [previous_period] + params)
+
+        # Build lookup dict for previous scores
+        previous_lookup = {row['id']: row['hype_score'] for row in previous_data}
+
+        # Calculate changes
+        results = []
+        for entity in current_data:
+            entity_id = entity['id']
+            current_score = float(entity['hype_score']) if entity['hype_score'] is not None else 0
+            previous_score = float(previous_lookup.get(entity_id, 0))
+
+            # Calculate percent change
+            if previous_score == 0 and current_score == 0:
+                continue  # Skip entities with no coverage
+            elif previous_score == 0:
+                percent_change = 1000.0  # Cap at 1000% for new entities
+            else:
+                percent_change = ((current_score - previous_score) / previous_score) * 100
+                percent_change = min(max(percent_change, -100), 1000)  # Clamp to [-100, 1000]
+
+            results.append({
+                "rank": 0,  # Will be set after sorting
+                "entity_id": entity_id,
+                "entity_name": entity['name'],
+                "subcategory": entity['subcategory'],
+                "hype_score_current": round(current_score, 2),
+                "hype_score_previous": round(previous_score, 2),
+                "percent_change": round(percent_change, 2),
+                "current_period": current_period,
+                "previous_period": previous_period
+            })
+
+        # Sort by percent_change DESC and add ranks
+        results.sort(key=lambda x: x['percent_change'], reverse=True)
+        for i, result in enumerate(results[:limit], 1):
+            result['rank'] = i
+
+        processing_time = (time.time() - start_time) * 1000
+
+        return StandardResponse.success(
+            data=results[:limit],
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "count": len(results[:limit]),
+                "current_period": current_period,
+                "previous_period": previous_period,
+                "filters": {
+                    "category": category,
+                    "subcategory": subcategory
+                }
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting top risers: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return StandardResponse.error(
+            message="Failed to retrieve top risers",
+            status_code=500,
+            details=str(e)
+        )
+
+@v2_router.get("/leaderboard/fallers")
+def get_top_fallers(
+    category: Optional[str] = Query(None, description="Filter by category (e.g., Sports)"),
+    subcategory: Optional[str] = Query(None, description="Filter by subcategory (e.g., NBA, Unrivaled)"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum results to return"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get entities with biggest HYPE score decrease week-over-week.
+
+    Returns entities sorted by percent change (lowest to highest).
+    Requires at least 2 weeks of historical data.
+    """
+    start_time = time.time()
+
+    try:
+        # Get 2 most recent time periods
+        periods_query = """
+            SELECT DISTINCT time_period
+            FROM historical_metrics
+            WHERE metric_type = 'hype_score'
+            ORDER BY time_period DESC
+            LIMIT 2
+        """
+        periods = execute_query(periods_query)
+
+        if not periods or len(periods) < 2:
+            raise HTTPException(400, "Need at least 2 weeks of data to calculate fallers")
+
+        current_period = periods[0]['time_period']
+        previous_period = periods[1]['time_period']
+
+        # Build filter conditions
+        filter_conditions = ["hm.metric_type = %s"]
+        params = ['hype_score']
+
+        if category:
+            filter_conditions.append("e.category = %s")
+            params.append(category)
+        if subcategory:
+            filter_conditions.append("e.subcategory = %s")
+            params.append(subcategory)
+
+        where_clause = " AND ".join(filter_conditions)
+
+        # Query current week scores
+        current_query = f"""
+            SELECT e.id, e.name, e.subcategory, hm.value as hype_score
+            FROM historical_metrics hm
+            JOIN entities e ON hm.entity_id = e.id
+            WHERE hm.time_period = %s AND {where_clause}
+        """
+        current_data = execute_query(current_query, [current_period] + params)
+
+        # Query previous week scores
+        previous_query = f"""
+            SELECT e.id, hm.value as hype_score
+            FROM historical_metrics hm
+            JOIN entities e ON hm.entity_id = e.id
+            WHERE hm.time_period = %s AND {where_clause}
+        """
+        previous_data = execute_query(previous_query, [previous_period] + params)
+
+        # Build lookup dict for previous scores
+        previous_lookup = {row['id']: row['hype_score'] for row in previous_data}
+
+        # Calculate changes
+        results = []
+        for entity in current_data:
+            entity_id = entity['id']
+            current_score = float(entity['hype_score']) if entity['hype_score'] is not None else 0
+            previous_score = float(previous_lookup.get(entity_id, 0))
+
+            # Skip if no previous data
+            if previous_score == 0:
+                continue
+
+            # Calculate percent change
+            percent_change = ((current_score - previous_score) / previous_score) * 100
+            percent_change = min(max(percent_change, -100), 1000)  # Clamp
+
+            results.append({
+                "rank": 0,  # Will be set after sorting
+                "entity_id": entity_id,
+                "entity_name": entity['name'],
+                "subcategory": entity['subcategory'],
+                "hype_score_current": round(current_score, 2),
+                "hype_score_previous": round(previous_score, 2),
+                "percent_change": round(percent_change, 2),
+                "current_period": current_period,
+                "previous_period": previous_period
+            })
+
+        # Sort by percent_change ASC (biggest drops first) and add ranks
+        results.sort(key=lambda x: x['percent_change'])
+        for i, result in enumerate(results[:limit], 1):
+            result['rank'] = i
+
+        processing_time = (time.time() - start_time) * 1000
+
+        return StandardResponse.success(
+            data=results[:limit],
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "count": len(results[:limit]),
+                "current_period": current_period,
+                "previous_period": previous_period,
+                "filters": {
+                    "category": category,
+                    "subcategory": subcategory
+                }
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting top fallers: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return StandardResponse.error(
+            message="Failed to retrieve top fallers",
+            status_code=500,
+            details=str(e)
+        )
+
+@v2_router.get("/leaderboard/pipn")
+def get_top_pipn(
+    category: Optional[str] = Query(None, description="Filter by category (e.g., Sports)"),
+    subcategory: Optional[str] = Query(None, description="Filter by subcategory (e.g., NBA, Unrivaled)"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum results to return"),
+    key_info: dict = Depends(get_api_key)
+):
+    """
+    Get most undervalued entities (highest positive PIPN scores).
+
+    PIPN = JORDN percentile - Reach percentile
+    Positive PIPN means more attention than platform suggests (undervalued).
+    """
+    start_time = time.time()
+
+    try:
+        # Get current period
+        periods_query = """
+            SELECT DISTINCT time_period
+            FROM historical_metrics
+            WHERE metric_type = 'pipn_score'
+            ORDER BY time_period DESC
+            LIMIT 1
+        """
+        periods = execute_query(periods_query)
+
+        if not periods:
+            raise HTTPException(400, "No PIPN data found in database")
+
+        current_period = periods[0]['time_period']
+
+        # Build filter conditions
+        filter_conditions = [
+            "hm.time_period = %s",
+            "hm.metric_type = 'pipn_score'",
+            "hm.value > 0"  # Only positive PIPN (undervalued)
+        ]
+        params = [current_period]
+
+        if category:
+            filter_conditions.append("e.category = %s")
+            params.append(category)
+        if subcategory:
+            filter_conditions.append("e.subcategory = %s")
+            params.append(subcategory)
+
+        where_clause = " AND ".join(filter_conditions)
+
+        # Get PIPN scores
+        pipn_query = f"""
+            SELECT
+                e.id,
+                e.name,
+                e.subcategory,
+                hm.value as pipn_score
+            FROM historical_metrics hm
+            JOIN entities e ON hm.entity_id = e.id
+            WHERE {where_clause}
+            ORDER BY hm.value DESC
+            LIMIT %s
+        """
+        pipn_data = execute_query(pipn_query, params + [limit])
+
+        # Enrich with percentile data
+        results = []
+        for entity in pipn_data:
+            # Get jordn_percentile and reach_percentile for this entity
+            percentiles_query = """
+                SELECT metric_type, value
+                FROM historical_metrics
+                WHERE entity_id = %s
+                AND time_period = %s
+                AND metric_type IN ('jordn_percentile', 'reach_percentile')
+            """
+            percentiles = execute_query(percentiles_query, (entity['id'], current_period))
+
+            percentile_lookup = {row['metric_type']: float(row['value']) for row in percentiles}
+
+            # Determine interpretation
+            pipn_val = float(entity['pipn_score'])
+            if pipn_val >= 50:
+                interpretation = "highly_undervalued"
+            elif pipn_val >= 20:
+                interpretation = "undervalued"
+            elif pipn_val >= -20:
+                interpretation = "fairly_valued"
+            elif pipn_val >= -50:
+                interpretation = "overvalued"
+            else:
+                interpretation = "highly_overvalued"
+
+            results.append({
+                "rank": len(results) + 1,
+                "entity_id": entity['id'],
+                "entity_name": entity['name'],
+                "subcategory": entity['subcategory'],
+                "pipn_score": round(pipn_val, 2),
+                "jordn_percentile": round(percentile_lookup.get('jordn_percentile', 0), 2),
+                "reach_percentile": round(percentile_lookup.get('reach_percentile', 0), 2),
+                "interpretation": interpretation
+            })
+
+        processing_time = (time.time() - start_time) * 1000
+
+        return StandardResponse.success(
+            data=results,
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "count": len(results),
+                "current_period": current_period,
+                "filters": {
+                    "category": category,
+                    "subcategory": subcategory
+                }
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting top PIPN: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return StandardResponse.error(
+            message="Failed to retrieve top PIPN entities",
+            status_code=500,
+            details=str(e)
+        )
+
+@v2_router.get("/leaderboard/rodmn")
+def get_top_rodmn(
+    category: Optional[str] = Query(None, description="Filter by category (e.g., Sports)"),
+    subcategory: Optional[str] = Query(None, description="Filter by subcategory (e.g., NBA, Unrivaled)"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum results to return"),
+    key_info: dict = Depends(get_api_key)
+):
+    """Get most controversial entities (highest RODMN scores)."""
+    start_time = time.time()
+
+    try:
+        # Get current period
+        periods_query = """
+            SELECT DISTINCT time_period
+            FROM historical_metrics
+            WHERE metric_type = 'rodmn_score'
+            ORDER BY time_period DESC
+            LIMIT 1
+        """
+        periods = execute_query(periods_query)
+
+        if not periods:
+            raise HTTPException(400, "No RODMN data found in database")
+
+        current_period = periods[0]['time_period']
+
+        # Build filter conditions
+        filter_conditions = [
+            "hm.time_period = %s",
+            "hm.metric_type = 'rodmn_score'"
+        ]
+        params = [current_period]
+
+        if category:
+            filter_conditions.append("e.category = %s")
+            params.append(category)
+        if subcategory:
+            filter_conditions.append("e.subcategory = %s")
+            params.append(subcategory)
+
+        where_clause = " AND ".join(filter_conditions)
+
+        rodmn_query = f"""
+            SELECT
+                e.id as entity_id,
+                e.name as entity_name,
+                e.subcategory,
+                hm.value as rodmn_score
+            FROM historical_metrics hm
+            JOIN entities e ON hm.entity_id = e.id
+            WHERE {where_clause}
+            ORDER BY hm.value DESC
+            LIMIT %s
+        """
+        results = execute_query(rodmn_query, params + [limit])
+
+        # Add ranks and round values
+        for i, result in enumerate(results, 1):
+            result['rank'] = i
+            result['rodmn_score'] = round(float(result['rodmn_score']), 2)
+
+        processing_time = (time.time() - start_time) * 1000
+
+        return StandardResponse.success(
+            data=results,
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "count": len(results),
+                "current_period": current_period,
+                "filters": {
+                    "category": category,
+                    "subcategory": subcategory
+                }
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting top RODMN: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return StandardResponse.error(
+            message="Failed to retrieve top RODMN entities",
+            status_code=500,
+            details=str(e)
+        )
+
+@v2_router.get("/stats/verticals")
+def get_vertical_stats(
+    category: str = Query("Sports", description="Category to analyze (e.g., Sports, Crypto)"),
+    key_info: dict = Depends(get_api_key)
+):
+    """Get aggregate statistics by subcategory/vertical."""
+    start_time = time.time()
+
+    try:
+        # Get current period
+        periods_query = """
+            SELECT DISTINCT time_period
+            FROM historical_metrics
+            WHERE metric_type = 'hype_score'
+            ORDER BY time_period DESC
+            LIMIT 1
+        """
+        periods = execute_query(periods_query)
+
+        if not periods:
+            raise HTTPException(400, "No data found in database")
+
+        current_period = periods[0]['time_period']
+
+        # Get all subcategories in this category
+        subcategories_query = """
+            SELECT DISTINCT e.subcategory
+            FROM entities e
+            WHERE e.category = %s AND e.subcategory IS NOT NULL
+            ORDER BY e.subcategory
+        """
+        subcategories = execute_query(subcategories_query, (category,))
+
+        verticals = []
+        for sub in subcategories:
+            subcategory = sub['subcategory']
+
+            # Get stats for this vertical
+            stats_query = """
+                SELECT
+                    COUNT(DISTINCT e.id) as total_entities,
+                    AVG(hm.value) as avg_hype_score,
+                    MAX(hm.value) as max_hype_score
+                FROM historical_metrics hm
+                JOIN entities e ON hm.entity_id = e.id
+                WHERE e.category = %s
+                AND e.subcategory = %s
+                AND hm.time_period = %s
+                AND hm.metric_type = 'hype_score'
+            """
+            stats = execute_query(stats_query, (category, subcategory, current_period))
+
+            # Get top entity in this vertical
+            top_entity_query = """
+                SELECT
+                    e.id,
+                    e.name,
+                    hm.value as hype_score
+                FROM historical_metrics hm
+                JOIN entities e ON hm.entity_id = e.id
+                WHERE e.category = %s
+                AND e.subcategory = %s
+                AND hm.time_period = %s
+                AND hm.metric_type = 'hype_score'
+                ORDER BY hm.value DESC
+                LIMIT 1
+            """
+            top_entity = execute_query(top_entity_query, (category, subcategory, current_period))
+
+            if stats and stats[0]['total_entities'] > 0:
+                verticals.append({
+                    "subcategory": subcategory,
+                    "total_entities": stats[0]['total_entities'],
+                    "avg_hype_score": round(float(stats[0]['avg_hype_score']), 2),
+                    "top_entity": {
+                        "id": top_entity[0]['id'],
+                        "name": top_entity[0]['name'],
+                        "hype_score": round(float(top_entity[0]['hype_score']), 2)
+                    } if top_entity else None
+                })
+
+        processing_time = (time.time() - start_time) * 1000
+
+        return StandardResponse.success(
+            data={
+                "category": category,
+                "current_period": current_period,
+                "verticals": verticals
+            },
+            metadata={
+                "processing_time_ms": round(processing_time, 2),
+                "vertical_count": len(verticals)
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting vertical stats: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return StandardResponse.error(
+            message="Failed to retrieve vertical stats",
+            status_code=500,
+            details=str(e)
+        )
 
 
-
-# ===== CONFIDENCE & AI QUALITY ENDPOINTS (V2) ===== 
+# ===== CONFIDENCE & AI QUALITY ENDPOINTS (V2) =====
 # COMMENTED OUT: These endpoints are not currently used by the website and cause deployment issues
 # due to AI system dependencies. Can be re-enabled later if needed.
-# 
+#
 # Endpoints that were removed:
-# - /confidence/entities - Get AI-enhanced confidence scores  
+# - /confidence/entities - Get AI-enhanced confidence scores
 # - /confidence/distribution - Get confidence distribution stats
 # - /entities/by-confidence - Filter entities by confidence threshold
-# 
+#
 # These can be added back when there's a real need for them.
