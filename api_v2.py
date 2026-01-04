@@ -974,8 +974,8 @@ def get_dashboard_widgets_v2(
         top_movers_query = """
             WITH latest_periods AS (
                 SELECT DISTINCT time_period
-                FROM historical_metrics 
-                WHERE time_period LIKE 'week_2025_%'
+                FROM historical_metrics
+                WHERE time_period LIKE 'week_%'
                 ORDER BY time_period DESC
                 LIMIT 2
             ),
@@ -1064,8 +1064,8 @@ def get_dashboard_widgets_v2(
         narrative_query = """
             WITH latest_period AS (
                 SELECT time_period
-                FROM historical_metrics 
-                WHERE time_period LIKE 'week_2025_%'
+                FROM historical_metrics
+                WHERE time_period LIKE 'week_%'
                 ORDER BY time_period DESC
                 LIMIT 1
             ),
@@ -1133,8 +1133,8 @@ def get_dashboard_widgets_v2(
         story_query = """
             WITH latest_period AS (
                 SELECT time_period
-                FROM historical_metrics 
-                WHERE time_period LIKE 'week_2025_%'
+                FROM historical_metrics
+                WHERE time_period LIKE 'week_%'
                 ORDER BY time_period DESC
                 LIMIT 1
             )
@@ -1246,15 +1246,15 @@ def get_available_time_periods_v2(
     try:
         # Use your proven working query pattern
         query = """
-            SELECT 
+            SELECT
                 time_period,
                 COUNT(DISTINCT entity_id) as entity_count,
                 COUNT(DISTINCT metric_type) as metric_count,
                 COUNT(*) as total_records,
                 MIN(timestamp) as earliest_data,
                 MAX(timestamp) as latest_data
-            FROM historical_metrics 
-            WHERE time_period LIKE 'week_2025_%'
+            FROM historical_metrics
+            WHERE time_period LIKE 'week_%'
             GROUP BY time_period
             ORDER BY time_period DESC
         """
